@@ -126,6 +126,42 @@ public sealed class OpenXmlDeckContextReaderTests
         Assert.Null(child.NormalizedGeometry);
         Assert.Equal("Grouped evidence", child.Text?.Paragraphs[0].Runs[0].Text);
     }
+
+    [Fact]
+    public void Read_preserves_native_table_structure_merges_text_and_direct_fill()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateTable(directory.Path);
+        var reader = new OpenXmlDeckContextReader();
+
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Succeeded, document.Status);
+        var slide = Assert.Single(document.Slides);
+        var element = Assert.Single(slide.Elements);
+        Assert.Equal(ElementKind.Table, element.Kind);
+        Assert.Equal("20", element.Identity.Id);
+        Assert.Equal("Plan Comparison", element.Identity.Name);
+
+        var table = Assert.IsType<TableContext>(element.Table);
+        Assert.Equal(2, table.RowCount);
+        Assert.Equal(3, table.ColumnCount);
+        Assert.Equal(2, table.Rows.Count);
+        Assert.All(table.Rows, row => Assert.Equal(3, row.Cells.Count));
+        Assert.Equal(1_200_000L, table.Rows[0].HeightEmu);
+
+        var mergeRoot = table.Rows[0].Cells[0];
+        Assert.Equal(2, mergeRoot.ColumnSpan);
+        Assert.False(mergeRoot.IsHorizontalMergeContinuation);
+        Assert.Equal("Combined Header", mergeRoot.Text.Paragraphs[0].Runs[0].Text);
+        Assert.True(mergeRoot.Text.Paragraphs[0].Runs[0].DirectStyle?.Bold is true);
+        Assert.Equal("srgbClr", mergeRoot.DirectFill?.Type);
+        Assert.Equal("D9EAF7", mergeRoot.DirectFill?.Value);
+
+        var mergeContinuation = table.Rows[0].Cells[1];
+        Assert.True(mergeContinuation.IsHorizontalMergeContinuation);
+        Assert.Equal("$35", table.Rows[1].Cells[2].Text.Paragraphs[0].Runs[0].Text);
+    }
 }
 
 internal sealed class TemporaryDirectory : IDisposable

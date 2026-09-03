@@ -255,6 +255,9 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 ? NormalizeGeometry(nativeGeometry, slideWidth, slideHeight, source, diagnostics)
                 : null;
             var text = ReadText(sourceElement);
+            var table = kind == ElementKind.Table
+                ? ReadTable(sourceElement, source, diagnostics)
+                : null;
 
             if (kind == ElementKind.Unknown)
             {
@@ -307,7 +310,8 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 status,
                 diagnostics,
                 parentGroupId,
-                text);
+                text,
+                table);
             elements.Add(element);
 
             if (sourceElement is P.GroupShape groupShape)
@@ -339,6 +343,7 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         {
             P.Shape => ElementKind.Shape,
             P.Picture => ElementKind.Picture,
+            P.GraphicFrame graphicFrame when FindTable(graphicFrame) is not null => ElementKind.Table,
             P.GraphicFrame => ElementKind.GraphicFrame,
             P.GroupShape => ElementKind.Group,
             P.ConnectionShape => ElementKind.Connector,
@@ -430,11 +435,112 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             return null;
         }
 
+        return ReadTextBody(textBody);
+    }
+
+    private static TextContentContext ReadTextBody(OpenXmlCompositeElement textBody)
+    {
         var paragraphs = textBody.Elements<A.Paragraph>()
             .Select(ReadParagraph)
             .ToArray();
 
         return new TextContentContext(paragraphs);
+    }
+
+    private static TableContext? ReadTable(
+        OpenXmlElement element,
+        SourceReference source,
+        ICollection<ExtractionDiagnostic> diagnostics)
+    {
+        if (element is not P.GraphicFrame graphicFrame || FindTable(graphicFrame) is not { } table)
+        {
+            return null;
+        }
+
+        var columnCount = table.TableGrid?.Elements<A.GridColumn>().Count() ?? 0;
+        var sourceRows = table.Elements<A.TableRow>().ToArray();
+        var rows = new List<TableRowContext>(sourceRows.Length);
+
+        for (var rowIndex = 0; rowIndex < sourceRows.Length; rowIndex++)
+        {
+            var sourceRow = sourceRows[rowIndex];
+            var sourceCells = sourceRow.Elements<A.TableCell>().ToArray();
+            var cells = new List<TableCellContext>(sourceCells.Length);
+
+            if (columnCount > 0 && sourceCells.Length != columnCount)
+            {
+                diagnostics.Add(new ExtractionDiagnostic(
+                    "DCX-TABLE-COLUMN-COUNT-MISMATCH",
+                    $"Table row {rowIndex} contains {sourceCells.Length} cells while the table grid declares {columnCount} columns.",
+                    DiagnosticSeverity.Warning,
+                    "TableExtractor",
+                    DiagnosticOutcome.Partial,
+                    source));
+            }
+
+            for (var columnIndex = 0; columnIndex < sourceCells.Length; columnIndex++)
+            {
+                var sourceCell = sourceCells[columnIndex];
+                cells.Add(new TableCellContext(
+                    rowIndex,
+                    columnIndex,
+                    ReadIntAttribute(sourceCell, "rowSpan") ?? 1,
+                    ReadIntAttribute(sourceCell, "gridSpan") ?? 1,
+                    ReadBooleanAttribute(sourceCell, "hMerge") ?? false,
+                    ReadBooleanAttribute(sourceCell, "vMerge") ?? false,
+                    sourceCell.TextBody is { } textBody
+                        ? ReadTextBody(textBody)
+                        : new TextContentContext([]),
+                    ReadTableCellFill(sourceCell.TableCellProperties)));
+            }
+
+            rows.Add(new TableRowContext(
+                rowIndex,
+                ReadLongAttribute(sourceRow, "h"),
+                cells));
+        }
+
+        if (columnCount == 0)
+        {
+            diagnostics.Add(new ExtractionDiagnostic(
+                "DCX-TABLE-GRID-MISSING",
+                "The native table does not declare a table grid; the column count was not inferred.",
+                DiagnosticSeverity.Warning,
+                "TableExtractor",
+                DiagnosticOutcome.Partial,
+                source));
+        }
+
+        return new TableContext(sourceRows.Length, columnCount, rows);
+    }
+
+    private static A.Table? FindTable(P.GraphicFrame graphicFrame)
+    {
+        return graphicFrame.Descendants<A.Table>().FirstOrDefault();
+    }
+
+    private static TableCellFillContext? ReadTableCellFill(OpenXmlCompositeElement? properties)
+    {
+        if (properties is null)
+        {
+            return null;
+        }
+
+        var solidFill = properties.ChildElements.FirstOrDefault(child => child.LocalName == "solidFill");
+        var color = solidFill?.ChildElements.FirstOrDefault();
+
+        if (color is null)
+        {
+            return null;
+        }
+
+        var value = color.LocalName == "sysClr"
+            ? ReadStringAttribute(color, "lastClr")
+            : ReadStringAttribute(color, "val");
+
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : new TableCellFillContext(color.LocalName, value);
     }
 
     private static TextParagraphContext ReadParagraph(A.Paragraph paragraph, int index)
@@ -548,6 +654,17 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
     private static int? ReadIntAttribute(OpenXmlElement? element, string attributeName)
     {
         return int.TryParse(
+            ReadStringAttribute(element, attributeName),
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : null;
+    }
+
+    private static long? ReadLongAttribute(OpenXmlElement? element, string attributeName)
+    {
+        return long.TryParse(
             ReadStringAttribute(element, attributeName),
             NumberStyles.Integer,
             CultureInfo.InvariantCulture,

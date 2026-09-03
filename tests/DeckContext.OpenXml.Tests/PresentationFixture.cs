@@ -49,6 +49,20 @@ internal static class PresentationFixture
         return path;
     }
 
+    public static string CreateTable(string directory)
+    {
+        var path = Path.Combine(directory, "table-basic.pptx");
+
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        WriteEntry(archive, "[Content_Types].xml", ContentTypes(twoSlides: false));
+        WriteEntry(archive, "_rels/.rels", PackageRelationships);
+        WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
+        WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
+        WriteEntry(archive, "ppt/slides/slide1.xml", SlideWithTable);
+
+        return path;
+    }
+
     public static string CreateMalformed(string directory)
     {
         var path = Path.Combine(directory, "malformed.pptx");
@@ -271,6 +285,86 @@ internal static class PresentationFixture
                   </p:txBody>
                 </p:sp>
               </p:grpSp>
+            </p:spTree>
+          </p:cSld>
+          <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+        </p:sld>
+        """;
+
+    private const string SlideWithTable = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+               xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+               xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:nvGrpSpPr>
+                <p:cNvPr id="1" name=""/>
+                <p:cNvGrpSpPr/>
+                <p:nvPr/>
+              </p:nvGrpSpPr>
+              <p:grpSpPr>
+                <a:xfrm>
+                  <a:off x="0" y="0"/>
+                  <a:ext cx="0" cy="0"/>
+                  <a:chOff x="0" y="0"/>
+                  <a:chExt cx="0" cy="0"/>
+                </a:xfrm>
+              </p:grpSpPr>
+              <p:graphicFrame>
+                <p:nvGraphicFramePr>
+                  <p:cNvPr id="20" name="Plan Comparison"/>
+                  <p:cNvGraphicFramePr/>
+                  <p:nvPr/>
+                </p:nvGraphicFramePr>
+                <p:xfrm>
+                  <a:off x="1000000" y="1200000"/>
+                  <a:ext cx="9000000" cy="2400000"/>
+                </p:xfrm>
+                <a:graphic>
+                  <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+                    <a:tbl>
+                      <a:tblPr firstRow="1" bandRow="1"/>
+                      <a:tblGrid>
+                        <a:gridCol w="3000000"/>
+                        <a:gridCol w="3000000"/>
+                        <a:gridCol w="3000000"/>
+                      </a:tblGrid>
+                      <a:tr h="1200000">
+                        <a:tc gridSpan="2">
+                          <a:txBody>
+                            <a:bodyPr/><a:lstStyle/>
+                            <a:p><a:r><a:rPr b="1"/><a:t>Combined Header</a:t></a:r></a:p>
+                          </a:txBody>
+                          <a:tcPr><a:solidFill><a:srgbClr val="D9EAF7"/></a:solidFill></a:tcPr>
+                        </a:tc>
+                        <a:tc hMerge="1">
+                          <a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody>
+                          <a:tcPr/>
+                        </a:tc>
+                        <a:tc>
+                          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Price</a:t></a:r></a:p></a:txBody>
+                          <a:tcPr/>
+                        </a:tc>
+                      </a:tr>
+                      <a:tr h="1200000">
+                        <a:tc>
+                          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Plan A</a:t></a:r></a:p></a:txBody>
+                          <a:tcPr/>
+                        </a:tc>
+                        <a:tc>
+                          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>500 Mbps</a:t></a:r></a:p></a:txBody>
+                          <a:tcPr/>
+                        </a:tc>
+                        <a:tc>
+                          <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>$35</a:t></a:r></a:p></a:txBody>
+                          <a:tcPr/>
+                        </a:tc>
+                      </a:tr>
+                    </a:tbl>
+                  </a:graphicData>
+                </a:graphic>
+              </p:graphicFrame>
             </p:spTree>
           </p:cSld>
           <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>

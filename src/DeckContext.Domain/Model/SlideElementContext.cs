@@ -8,6 +8,7 @@ public enum ElementKind
     Shape,
     Picture,
     GraphicFrame,
+    Table,
     Group,
     Connector,
     Unknown,
@@ -27,4 +28,5 @@ public sealed record SlideElementContext(
     ExtractionStatus Status,
     IReadOnlyList<ExtractionDiagnostic> Diagnostics,
     string? ParentGroupId = null,
-    TextContentContext? Text = null);
+    TextContentContext? Text = null,
+    TableContext? Table = null);
