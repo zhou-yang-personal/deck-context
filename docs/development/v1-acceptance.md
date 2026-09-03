@@ -26,6 +26,8 @@ This checklist intentionally combines the three manual gates. One representative
 
 The Windows workflow restores, builds, tests, and publishes both the WPF application and verification command. The complete-package tests also re-run a fixture twice and compare Markdown, JSON, report, and manifest byte-for-byte, then verify every manifest asset's size and SHA-256.
 
+`manifest.json` lists the generated context/report files and extracted binary assets; it deliberately does not hash itself, avoiding a recursive self-hash.
+
 ## One-pass manual Gate A/B/C checklist
 
 1. Download and unzip `DeckContext-dev-win-x64-{short-sha}` from the successful `dev` workflow run.
