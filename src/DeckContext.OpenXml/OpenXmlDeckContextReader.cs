@@ -350,6 +350,7 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
     {
         return exception is OpenXmlPackageException
             or IOException
+            or FileFormatException
             or UnauthorizedAccessException
             or XmlException
             or ArgumentException;
