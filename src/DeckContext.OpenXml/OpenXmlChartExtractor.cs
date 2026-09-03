@@ -190,6 +190,18 @@ internal static class OpenXmlChartExtractor
                 ReadStringAttribute(externalData, "id"),
                 ReadBooleanValue(FindDirectChild(externalData, "autoUpdate")));
 
+            var workbookResult = OpenXmlEmbeddedWorkbookExtractor.Extract(
+                chartPart,
+                chart,
+                source,
+                diagnostics);
+            chart = workbookResult.Chart;
+
+            if (workbookResult.Status == ExtractionStatus.Partial)
+            {
+                status = ExtractionStatus.Partial;
+            }
+
             if (status == ExtractionStatus.Succeeded &&
                 diagnostics.Any(diagnostic => diagnostic.Outcome == DiagnosticOutcome.Partial))
             {

@@ -50,6 +50,15 @@ jobs:
           --no-restore
           --output artifacts/publish/DeckContext
 
+      - name: Publish verification command
+        run: >-
+          dotnet publish tools/DeckContext.Verification/DeckContext.Verification.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output artifacts/publish/DeckContext.Verification
+
       - name: Resolve artifact identity
         id: artifact
         shell: pwsh
@@ -61,6 +70,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifact.outputs.name }}
-          path: artifacts/publish/DeckContext
+          path: artifacts/publish
           if-no-files-found: error
           retention-days: 14

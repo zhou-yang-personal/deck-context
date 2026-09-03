@@ -1,6 +1,8 @@
 using DeckContext.Domain.Diagnostics;
 using DeckContext.Domain.Extraction;
 using DeckContext.Domain.Model;
+using System.IO.Compression;
+using System.Security.Cryptography;
 
 namespace DeckContext.OpenXml.Tests;
 
@@ -272,6 +274,111 @@ public sealed class OpenXmlDeckContextReaderTests
         var diagnostic = Assert.Single(element.Diagnostics);
         Assert.Equal("DCX-CHART-RELATIONSHIP-FAILED", diagnostic.Code);
         Assert.Equal(DiagnosticOutcome.Skipped, diagnostic.Outcome);
+    }
+
+    [Fact]
+    public void Read_traces_chart_formulas_to_embedded_workbook_ranges_and_cells()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateEmbeddedWorkbookChart(directory.Path);
+        var reader = new OpenXmlDeckContextReader();
+
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Succeeded, document.Status);
+        var element = Assert.Single(Assert.Single(document.Slides).Elements);
+        Assert.Equal(ExtractionStatus.Succeeded, element.Status);
+        var chart = Assert.IsType<ChartContext>(element.Chart);
+        Assert.Equal("rId1", chart.ExternalDataRelationshipId);
+        Assert.True(chart.ExternalDataAutoUpdate is false);
+
+        var workbook = Assert.IsType<EmbeddedWorkbookContext>(chart.EmbeddedWorkbook);
+        Assert.Equal(ExtractionStatus.Succeeded, workbook.Status);
+        Assert.Equal("rId1", workbook.RelationshipId);
+        Assert.Equal("/ppt/charts/chart1.xml", workbook.ChartPartUri);
+        Assert.Equal("/ppt/embeddings/workbook1.xlsx", workbook.PartUri);
+        Assert.Equal("chart1-workbook.xlsx", workbook.SuggestedFileName);
+        Assert.True(workbook.SizeBytes > 0);
+        Assert.Matches("^[0-9a-f]{64}$", workbook.Sha256);
+        Assert.Empty(workbook.Diagnostics);
+
+        var worksheet = Assert.Single(workbook.Worksheets);
+        Assert.Equal("Data", worksheet.Name);
+        Assert.Equal("1", worksheet.SheetId);
+        Assert.Equal("rId1", worksheet.RelationshipId);
+        Assert.Equal("/xl/worksheets/sheet1.xml", worksheet.PartUri);
+        Assert.Equal(3, worksheet.ReferencedRangeIds.Count);
+        Assert.Equal(3, workbook.ReferencedRanges.Count);
+
+        var series = Assert.Single(chart.Plots[0].Series, item => item.Index == 0);
+        Assert.Equal("range-001", series.NameWorkbookRangeId);
+        Assert.Equal("range-002", series.Categories?.WorkbookRangeId);
+        Assert.Equal("range-003", series.Values?.WorkbookRangeId);
+
+        var nameRange = Assert.Single(workbook.ReferencedRanges, range => range.Id == "range-001");
+        Assert.Equal("Data", nameRange.WorksheetName);
+        Assert.Equal("B1", nameRange.Address);
+        Assert.Equal("Operator A", Assert.Single(nameRange.Cells).ResolvedValue);
+
+        var categoryRange = Assert.Single(workbook.ReferencedRanges, range => range.Id == "range-002");
+        Assert.Equal("A2:A4", categoryRange.Address);
+        Assert.Equal<string?>(["2024", "2025", "2026"], categoryRange.Cells.Select(cell => cell.ResolvedValue));
+
+        var valueRange = Assert.Single(workbook.ReferencedRanges, range => range.Id == "range-003");
+        Assert.Equal("B2:B4", valueRange.Address);
+        Assert.Equal<string?>(["100", "125.5", "150"], valueRange.Cells.Select(cell => cell.RawValue));
+        Assert.Equal("SUM(B2:B3)+24.5", valueRange.Cells[2].Formula);
+        Assert.True(valueRange.Cells[2].IsPresent);
+    }
+
+    [Fact]
+    public void Export_copies_the_exact_traced_embedded_workbook_asset()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateEmbeddedWorkbookChart(directory.Path);
+        var document = new OpenXmlDeckContextReader().Read(path, TestContext.Current.CancellationToken);
+        var workbook = Assert.IsType<EmbeddedWorkbookContext>(
+            Assert.Single(Assert.Single(document.Slides).Elements).Chart?.EmbeddedWorkbook);
+        var destination = Path.Combine(directory.Path, workbook.SuggestedFileName);
+
+        new OpenXmlEmbeddedWorkbookAssetExporter().Export(
+            path,
+            workbook,
+            destination,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(destination));
+        Assert.Equal(
+            workbook.Sha256,
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(destination))).ToLowerInvariant());
+        using var archive = ZipFile.OpenRead(destination);
+        Assert.NotNull(archive.GetEntry("xl/workbook.xml"));
+        Assert.NotNull(archive.GetEntry("xl/worksheets/sheet1.xml"));
+    }
+
+    [Fact]
+    public void Read_keeps_chart_cache_and_marks_only_chart_partial_when_workbook_is_malformed()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateMalformedEmbeddedWorkbookChart(directory.Path);
+
+        var document = new OpenXmlDeckContextReader().Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Partial, document.Status);
+        var element = Assert.Single(Assert.Single(document.Slides).Elements);
+        Assert.Equal(ExtractionStatus.Partial, element.Status);
+        var chart = Assert.IsType<ChartContext>(element.Chart);
+        var workbook = Assert.IsType<EmbeddedWorkbookContext>(chart.EmbeddedWorkbook);
+        Assert.Equal(ExtractionStatus.Failed, workbook.Status);
+        Assert.Empty(workbook.Worksheets);
+        Assert.Empty(workbook.ReferencedRanges);
+        Assert.True(workbook.SizeBytes > 0);
+        Assert.Equal(100d, chart.Plots[0].Series[0].Values?.Points[0].NumericValue);
+        var diagnostic = Assert.Single(
+            element.Diagnostics,
+            item => item.Code == "DCX-WORKBOOK-READ-FAILED");
+        Assert.Equal("EmbeddedWorkbookExtractor", diagnostic.Extractor);
+        Assert.Equal(DiagnosticOutcome.Partial, diagnostic.Outcome);
     }
 }
 

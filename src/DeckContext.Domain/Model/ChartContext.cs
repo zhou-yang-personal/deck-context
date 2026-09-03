@@ -8,7 +8,8 @@ public sealed record ChartDataPointContext(
 public sealed record ChartDataSourceContext(
     string? Formula,
     string? NumberFormatCode,
-    IReadOnlyList<ChartDataPointContext> Points);
+    IReadOnlyList<ChartDataPointContext> Points,
+    string? WorkbookRangeId = null);
 
 public sealed record ChartSeriesContext(
     int Index,
@@ -16,7 +17,8 @@ public sealed record ChartSeriesContext(
     string? Name,
     string? NameFormula,
     ChartDataSourceContext? Categories,
-    ChartDataSourceContext? Values);
+    ChartDataSourceContext? Values,
+    string? NameWorkbookRangeId = null);
 
 public sealed record ChartPlotContext(
     string Type,
@@ -69,4 +71,5 @@ public sealed record ChartContext(
     ChartLegendContext Legend,
     IReadOnlyList<ChartAxisContext> Axes,
     string? ExternalDataRelationshipId,
-    bool? ExternalDataAutoUpdate);
+    bool? ExternalDataAutoUpdate,
+    EmbeddedWorkbookContext? EmbeddedWorkbook = null);

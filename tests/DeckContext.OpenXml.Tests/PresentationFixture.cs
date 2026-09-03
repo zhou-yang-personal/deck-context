@@ -73,6 +73,24 @@ internal static class PresentationFixture
         return CreateChartPackage(directory, "chart-unsupported.pptx", UnsupportedChart);
     }
 
+    public static string CreateEmbeddedWorkbookChart(string directory)
+    {
+        return CreateChartPackage(
+            directory,
+            "chart-embedded-workbook.pptx",
+            ChartWithExternalData,
+            CreateWorkbookBytes());
+    }
+
+    public static string CreateMalformedEmbeddedWorkbookChart(string directory)
+    {
+        return CreateChartPackage(
+            directory,
+            "chart-malformed-embedded-workbook.pptx",
+            ChartWithExternalData,
+            [0x44, 0x43, 0x58]);
+    }
+
     public static string CreateMissingChartRelationship(string directory)
     {
         var path = Path.Combine(directory, "chart-missing-relationship.pptx");
@@ -103,15 +121,28 @@ internal static class PresentationFixture
         writer.Write(content);
     }
 
+    private static void WriteBinaryEntry(ZipArchive archive, string path, byte[] content)
+    {
+        var entry = archive.CreateEntry(path, CompressionLevel.NoCompression);
+        entry.LastWriteTime = FixedEntryTime;
+
+        using var stream = entry.Open();
+        stream.Write(content);
+    }
+
     private static string CreateChartPackage(
         string directory,
         string fileName,
-        string chartXml)
+        string chartXml,
+        byte[]? workbookBytes = null)
     {
         var path = Path.Combine(directory, fileName);
 
         using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
-        WriteEntry(archive, "[Content_Types].xml", ContentTypes(twoSlides: false, hasChart: true));
+        WriteEntry(
+            archive,
+            "[Content_Types].xml",
+            ContentTypes(twoSlides: false, hasChart: true, hasWorkbook: workbookBytes is not null));
         WriteEntry(archive, "_rels/.rels", PackageRelationships);
         WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
         WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
@@ -119,16 +150,28 @@ internal static class PresentationFixture
         WriteEntry(archive, "ppt/slides/_rels/slide1.xml.rels", SlideChartRelationships);
         WriteEntry(archive, "ppt/charts/chart1.xml", chartXml);
 
+        if (workbookBytes is not null)
+        {
+            WriteEntry(archive, "ppt/charts/_rels/chart1.xml.rels", ChartWorkbookRelationships);
+            WriteBinaryEntry(archive, "ppt/embeddings/workbook1.xlsx", workbookBytes);
+        }
+
         return path;
     }
 
-    private static string ContentTypes(bool twoSlides, bool hasChart = false)
+    private static string ContentTypes(
+        bool twoSlides,
+        bool hasChart = false,
+        bool hasWorkbook = false)
     {
         var secondSlide = twoSlides
             ? "<Override PartName=\"/ppt/slides/slide2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slide+xml\"/>"
             : string.Empty;
         var chart = hasChart
             ? "<Override PartName=\"/ppt/charts/chart1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
+            : string.Empty;
+        var workbook = hasWorkbook
+            ? "<Default Extension=\"xlsx\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"/>"
             : string.Empty;
 
         return $"""
@@ -140,8 +183,26 @@ internal static class PresentationFixture
               <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
               {secondSlide}
               {chart}
+              {workbook}
             </Types>
             """;
+    }
+
+    private static byte[] CreateWorkbookBytes()
+    {
+        using var stream = new MemoryStream();
+
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            WriteEntry(archive, "[Content_Types].xml", WorkbookContentTypes);
+            WriteEntry(archive, "_rels/.rels", WorkbookPackageRelationships);
+            WriteEntry(archive, "xl/workbook.xml", WorkbookXml);
+            WriteEntry(archive, "xl/_rels/workbook.xml.rels", WorkbookRelationships);
+            WriteEntry(archive, "xl/worksheets/sheet1.xml", WorkbookSheet);
+            WriteEntry(archive, "xl/sharedStrings.xml", WorkbookSharedStrings);
+        }
+
+        return stream.ToArray();
     }
 
     private static string PresentationXml(bool twoSlides)
@@ -190,6 +251,69 @@ internal static class PresentationFixture
         <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
           <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
         </Relationships>
+        """;
+
+    private const string ChartWorkbookRelationships = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/workbook1.xlsx"/>
+        </Relationships>
+        """;
+
+    private const string WorkbookContentTypes = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+          <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+          <Default Extension="xml" ContentType="application/xml"/>
+          <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+          <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+          <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+        </Types>
+        """;
+
+    private const string WorkbookPackageRelationships = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+        </Relationships>
+        """;
+
+    private const string WorkbookRelationships = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+          <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+        </Relationships>
+        """;
+
+    private const string WorkbookXml = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+                  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+          <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+        </workbook>
+        """;
+
+    private const string WorkbookSharedStrings = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">
+          <si><t>Operator A</t></si>
+          <si><t>2024</t></si>
+          <si><t>2025</t></si>
+          <si><t>2026</t></si>
+        </sst>
+        """;
+
+    private const string WorkbookSheet = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+          <sheetData>
+            <row r="1"><c r="B1" t="s"><v>0</v></c></row>
+            <row r="2"><c r="A2" t="s"><v>1</v></c><c r="B2"><v>100</v></c></row>
+            <row r="3"><c r="A3" t="s"><v>2</v></c><c r="B3"><v>125.5</v></c></row>
+            <row r="4"><c r="A4" t="s"><v>3</v></c><c r="B4"><f>SUM(B2:B3)+24.5</f><v>150</v></c></row>
+          </sheetData>
+        </worksheet>
         """;
 
     private const string SlideWithShape = """
@@ -516,6 +640,11 @@ internal static class PresentationFixture
           </c:chart>
         </c:chartSpace>
         """;
+
+    private static readonly string ChartWithExternalData = BasicChart.Replace(
+        "</c:chartSpace>",
+        "<c:externalData r:id=\"rId1\"><c:autoUpdate val=\"0\"/></c:externalData></c:chartSpace>",
+        StringComparison.Ordinal);
 
     private const string UnsupportedChart = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

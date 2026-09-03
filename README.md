@@ -57,7 +57,15 @@ dotnet build DeckContext.sln --configuration Release --no-restore
 dotnet test DeckContext.sln --configuration Release --no-build
 ```
 
-Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF shell as a self-contained `win-x64` package, and upload a commit-traceable GitHub Actions artifact.
+Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF shell and verification command as self-contained `win-x64` packages, and upload a commit-traceable GitHub Actions artifact.
+
+For the Phase 5 chart/workbook verification package, run:
+
+```powershell
+.\DeckContext.Verification\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
+```
+
+The command writes `deck.context.json` and exports traceable embedded workbooks under `workbooks\`. It is a development verification surface; the end-user conversion workflow remains scheduled for Phase 8.
 
 ## Branch Strategy
 
@@ -68,4 +76,4 @@ Unless explicitly requested otherwise, future implementation work should target 
 
 ## Status
 
-Phases 0–4 are complete on `dev`: engineering/CI bootstrap, normalized IR and package/slide foundations, direct text and geometry extraction, group parentage, structured native PowerPoint table extraction, and source-backed native chart extraction. Phase 5 follows chart formulas and relationships into embedded Excel workbooks. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
+Phases 0–4 are complete on `dev`. Phase 5 implementation follows chart formulas and package relationships into embedded Excel workbooks, maps referenced worksheets/ranges/cells, preserves formula/raw/resolved values, validates chart caches, and exports the exact workbook asset. Phase 5 remains pending Gate A acceptance against the supplied real-world deck. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
