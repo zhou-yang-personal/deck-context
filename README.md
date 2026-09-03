@@ -44,6 +44,20 @@ The core extraction pipeline must remain usable without Microsoft PowerPoint, OC
 - [`AGENTS.md`](AGENTS.md) — repository execution rules and development constraints.
 - [`docs/requirements/v1-baseline.md`](docs/requirements/v1-baseline.md) — confirmed V1 requirements and explicit non-goals.
 - [`docs/architecture/5-view-architecture-v0.1.md`](docs/architecture/5-view-architecture-v0.1.md) — V1 architecture using the 4+1 / five-view model.
+- [`docs/development/v1-execution-backlog.md`](docs/development/v1-execution-backlog.md) — Phase 0–9 implementation backlog, acceptance evidence, risks, and manual gates.
+- [`docs/development/work-bootstrap-prompt.md`](docs/development/work-bootstrap-prompt.md) — complete Work development and delivery protocol.
+
+## Build and test
+
+The repository requires the .NET 10 SDK. From the repository root:
+
+```powershell
+dotnet restore DeckContext.sln
+dotnet build DeckContext.sln --configuration Release --no-restore
+dotnet test tests/DeckContext.Architecture.Tests/DeckContext.Architecture.Tests.csproj --configuration Release --no-build
+```
+
+Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF shell as a self-contained `win-x64` package, and upload a commit-traceable GitHub Actions artifact.
 
 ## Branch Strategy
 
@@ -54,4 +68,4 @@ Unless explicitly requested otherwise, future implementation work should target 
 
 ## Status
 
-Architecture and V1 requirement baseline established. Implementation has not started yet.
+Phase 0 engineering bootstrap is established on `dev`. PPTX extraction behavior begins in Phase 1; the current WPF shell intentionally exposes no extraction workflow.

@@ -1,0 +1,39 @@
+<Window x:Class="DeckContext.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeckContext"
+        Width="760"
+        Height="460"
+        MinWidth="640"
+        MinHeight="380"
+        WindowStartupLocation="CenterScreen">
+  <Grid Background="#F7F8FA">
+    <Border Width="520"
+            Padding="40"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Background="White"
+            BorderBrush="#D9DEE7"
+            BorderThickness="1"
+            CornerRadius="8">
+      <StackPanel>
+        <TextBlock FontFamily="Arial"
+                   FontSize="30"
+                   FontWeight="SemiBold"
+                   Foreground="#1B1F24"
+                   Text="DeckContext" />
+        <TextBlock Margin="0,14,0,0"
+                   FontFamily="Arial"
+                   FontSize="16"
+                   Foreground="#4B5563"
+                   Text="Engineering bootstrap is ready." />
+        <TextBlock Margin="0,12,0,0"
+                   FontFamily="Arial"
+                   FontSize="13"
+                   Foreground="#6B7280"
+                   TextWrapping="Wrap"
+                   Text="PPTX extraction will be implemented incrementally after the normalized IR and package foundation are established." />
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>

@@ -1,0 +1,29 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Pp]ublish/
+[Tt]est[Rr]esults/
+
+## Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+
+## Windows / macOS
+Thumbs.db
+.DS_Store
+
+## DeckContext generated output
+*.context.md
+*.context.json
+extraction-report.json

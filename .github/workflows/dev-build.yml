@@ -1,0 +1,66 @@
+name: Dev Build
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-publish:
+    name: Build, test, and publish Windows package
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      DOTNET_NOLOGO: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore DeckContext.sln --runtime win-x64
+
+      - name: Build
+        run: dotnet build DeckContext.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/DeckContext.Architecture.Tests/DeckContext.Architecture.Tests.csproj --configuration Release --no-build
+
+      - name: Publish Windows x64 self-contained package
+        run: >-
+          dotnet publish src/DeckContext.App/DeckContext.App.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output artifacts/publish/DeckContext
+
+      - name: Resolve artifact identity
+        id: artifact
+        shell: pwsh
+        run: |
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          "name=DeckContext-dev-win-x64-$shortSha" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: artifacts/publish/DeckContext
+          if-no-files-found: error
+          retention-days: 14
