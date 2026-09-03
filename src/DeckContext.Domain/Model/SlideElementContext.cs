@@ -25,4 +25,6 @@ public sealed record SlideElementContext(
     NativeGeometry? NativeGeometry,
     NormalizedGeometry? NormalizedGeometry,
     ExtractionStatus Status,
-    IReadOnlyList<ExtractionDiagnostic> Diagnostics);
+    IReadOnlyList<ExtractionDiagnostic> Diagnostics,
+    string? ParentGroupId = null,
+    TextContentContext? Text = null);

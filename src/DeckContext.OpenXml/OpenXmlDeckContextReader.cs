@@ -6,6 +6,7 @@ using DeckContext.Domain.Extraction;
 using DeckContext.Domain.Model;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 
 namespace DeckContext.OpenXml;
@@ -152,8 +153,11 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 slidePart,
                 sourceFileName,
                 slideIndex,
-                relationshipId);
-            var slideStatus = elements.Any(element => element.Status == ExtractionStatus.Unsupported)
+                relationshipId,
+                width,
+                height);
+            var slideStatus = elements.Any(element =>
+                element.Status is ExtractionStatus.Partial or ExtractionStatus.Failed or ExtractionStatus.Unsupported)
                 ? ExtractionStatus.Partial
                 : ExtractionStatus.Succeeded;
 
@@ -186,7 +190,9 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         SlidePart slidePart,
         string sourceFileName,
         int slideIndex,
-        string relationshipId)
+        string relationshipId,
+        long? slideWidth,
+        long? slideHeight)
     {
         var shapeTree = slidePart.Slide?.CommonSlideData?.ShapeTree;
 
@@ -195,12 +201,37 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             return [];
         }
 
-        var sourceElements = shapeTree.ChildElements
-            .Where(element => element is not P.NonVisualGroupShapeProperties)
-            .Where(element => element is not P.GroupShapeProperties)
-            .ToArray();
+        var elements = new List<SlideElementContext>();
+        ReadElements(
+            shapeTree,
+            sourceFileName,
+            slideIndex,
+            relationshipId,
+            slidePart.Uri.OriginalString,
+            null,
+            GeometryCoordinateSpace.Slide,
+            slideWidth,
+            slideHeight,
+            elements);
 
-        var elements = new List<SlideElementContext>(sourceElements.Length);
+        return elements;
+    }
+
+    private static void ReadElements(
+        OpenXmlCompositeElement container,
+        string sourceFileName,
+        int slideIndex,
+        string relationshipId,
+        string slidePartUri,
+        string? parentGroupId,
+        GeometryCoordinateSpace coordinateSpace,
+        long? slideWidth,
+        long? slideHeight,
+        ICollection<SlideElementContext> elements)
+    {
+        var sourceElements = container.ChildElements
+            .Where(IsSlideElement)
+            .ToArray();
 
         for (var zOrder = 0; zOrder < sourceElements.Length; zOrder++)
         {
@@ -211,42 +242,95 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             var elementName = drawingProperties?.Name?.Value;
             var source = new SourceReference(
                 sourceFileName,
-                slidePart.Uri.OriginalString,
+                slidePartUri,
                 relationshipId,
                 slideIndex,
                 elementId,
                 elementName);
 
-            IReadOnlyList<ExtractionDiagnostic> diagnostics = [];
+            var diagnostics = new List<ExtractionDiagnostic>();
             var status = ExtractionStatus.Succeeded;
+            var nativeGeometry = ReadNativeGeometry(sourceElement, coordinateSpace);
+            var normalizedGeometry = coordinateSpace == GeometryCoordinateSpace.Slide
+                ? NormalizeGeometry(nativeGeometry, slideWidth, slideHeight, source, diagnostics)
+                : null;
+            var text = ReadText(sourceElement);
 
             if (kind == ElementKind.Unknown)
             {
                 status = ExtractionStatus.Unsupported;
-                diagnostics =
-                [
-                    new ExtractionDiagnostic(
-                        "DCX-ELEMENT-TYPE-UNSUPPORTED",
-                        $"The top-level element type '{sourceElement.LocalName}' is not recognized.",
-                        DiagnosticSeverity.Warning,
-                        "SlideElementReader",
-                        DiagnosticOutcome.Skipped,
-                        source),
-                ];
+                diagnostics.Add(new ExtractionDiagnostic(
+                    "DCX-ELEMENT-TYPE-UNSUPPORTED",
+                    $"The slide element type '{sourceElement.LocalName}' is not recognized.",
+                    DiagnosticSeverity.Warning,
+                    "SlideElementReader",
+                    DiagnosticOutcome.Skipped,
+                    source));
+            }
+            else if (nativeGeometry is null)
+            {
+                status = ExtractionStatus.Partial;
+                diagnostics.Add(new ExtractionDiagnostic(
+                    "DCX-GEOMETRY-NOT-DIRECT",
+                    "The element does not contain a directly declared transform; geometry was not inferred.",
+                    DiagnosticSeverity.Warning,
+                    "GeometryExtractor",
+                    DiagnosticOutcome.Partial,
+                    source));
             }
 
-            elements.Add(new SlideElementContext(
+            if (kind == ElementKind.Group && string.IsNullOrWhiteSpace(elementId))
+            {
+                status = ExtractionStatus.Partial;
+                diagnostics.Add(new ExtractionDiagnostic(
+                    "DCX-GROUP-ID-MISSING",
+                    "The group has no source object id, so child elements cannot reference a parent group id.",
+                    DiagnosticSeverity.Warning,
+                    "GeometryExtractor",
+                    DiagnosticOutcome.Partial,
+                    source));
+            }
+
+            if (status == ExtractionStatus.Succeeded &&
+                diagnostics.Any(diagnostic => diagnostic.Outcome == DiagnosticOutcome.Partial))
+            {
+                status = ExtractionStatus.Partial;
+            }
+
+            var element = new SlideElementContext(
                 new ElementIdentity(elementId, elementName),
                 kind,
                 source,
                 zOrder,
-                null,
-                null,
+                nativeGeometry,
+                normalizedGeometry,
                 status,
-                diagnostics));
-        }
+                diagnostics,
+                parentGroupId,
+                text);
+            elements.Add(element);
 
-        return elements;
+            if (sourceElement is P.GroupShape groupShape)
+            {
+                ReadElements(
+                    groupShape,
+                    sourceFileName,
+                    slideIndex,
+                    relationshipId,
+                    slidePartUri,
+                    elementId,
+                    GeometryCoordinateSpace.ParentGroup,
+                    slideWidth,
+                    slideHeight,
+                    elements);
+            }
+        }
+    }
+
+    private static bool IsSlideElement(OpenXmlElement element)
+    {
+        return element is not P.NonVisualGroupShapeProperties
+            and not P.GroupShapeProperties;
     }
 
     private static ElementKind GetElementKind(OpenXmlElement element)
@@ -273,6 +357,227 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             P.ConnectionShape connectionShape => connectionShape.NonVisualConnectionShapeProperties?.NonVisualDrawingProperties,
             _ => null,
         };
+    }
+
+    private static NativeGeometry? ReadNativeGeometry(
+        OpenXmlElement element,
+        GeometryCoordinateSpace coordinateSpace)
+    {
+        OpenXmlCompositeElement? transform = element switch
+        {
+            P.Shape shape => shape.ShapeProperties?.Transform2D,
+            P.Picture picture => picture.ShapeProperties?.Transform2D,
+            P.GraphicFrame graphicFrame => graphicFrame.Transform,
+            P.GroupShape groupShape => groupShape.GroupShapeProperties?.TransformGroup,
+            P.ConnectionShape connectionShape => connectionShape.ShapeProperties?.Transform2D,
+            _ => null,
+        };
+
+        if (transform is null)
+        {
+            return null;
+        }
+
+        var offset = transform.ChildElements.FirstOrDefault(child => child.LocalName == "off");
+        var extents = transform.ChildElements.FirstOrDefault(child => child.LocalName == "ext");
+
+        if (!TryReadLongAttribute(offset, "x", out var x) ||
+            !TryReadLongAttribute(offset, "y", out var y) ||
+            !TryReadLongAttribute(extents, "cx", out var width) ||
+            !TryReadLongAttribute(extents, "cy", out var height))
+        {
+            return null;
+        }
+
+        return new NativeGeometry(x, y, width, height, coordinateSpace);
+    }
+
+    private static NormalizedGeometry? NormalizeGeometry(
+        NativeGeometry? nativeGeometry,
+        long? slideWidth,
+        long? slideHeight,
+        SourceReference source,
+        ICollection<ExtractionDiagnostic> diagnostics)
+    {
+        if (nativeGeometry is null)
+        {
+            return null;
+        }
+
+        if (slideWidth is null or <= 0 || slideHeight is null or <= 0)
+        {
+            diagnostics.Add(new ExtractionDiagnostic(
+                "DCX-GEOMETRY-NORMALIZATION-UNAVAILABLE",
+                "Normalized geometry could not be calculated because the presentation slide size is missing or invalid.",
+                DiagnosticSeverity.Warning,
+                "GeometryExtractor",
+                DiagnosticOutcome.Partial,
+                source));
+            return null;
+        }
+
+        return new NormalizedGeometry(
+            nativeGeometry.X / (double)slideWidth.Value,
+            nativeGeometry.Y / (double)slideHeight.Value,
+            nativeGeometry.Width / (double)slideWidth.Value,
+            nativeGeometry.Height / (double)slideHeight.Value);
+    }
+
+    private static TextContentContext? ReadText(OpenXmlElement element)
+    {
+        if (element is not P.Shape { TextBody: { } textBody })
+        {
+            return null;
+        }
+
+        var paragraphs = textBody.Elements<A.Paragraph>()
+            .Select(ReadParagraph)
+            .ToArray();
+
+        return new TextContentContext(paragraphs);
+    }
+
+    private static TextParagraphContext ReadParagraph(A.Paragraph paragraph, int index)
+    {
+        var paragraphProperties = paragraph.ParagraphProperties;
+        var runs = new List<TextRunContext>();
+
+        foreach (var child in paragraph.ChildElements)
+        {
+            switch (child)
+            {
+                case A.Run run:
+                    runs.Add(new TextRunContext(
+                        TextRunKind.Text,
+                        run.Text?.Text ?? string.Empty,
+                        ReadTextStyle(run.RunProperties)));
+                    break;
+                case A.Field field:
+                    runs.Add(new TextRunContext(
+                        TextRunKind.Field,
+                        field.Text?.Text ?? string.Empty,
+                        ReadTextStyle(field.RunProperties)));
+                    break;
+                case A.Break textBreak:
+                    runs.Add(new TextRunContext(
+                        TextRunKind.Break,
+                        "\n",
+                        ReadTextStyle(textBreak.RunProperties)));
+                    break;
+            }
+        }
+
+        return new TextParagraphContext(
+            index,
+            ReadIntAttribute(paragraphProperties, "lvl"),
+            ReadStringAttribute(paragraphProperties, "algn"),
+            ReadTextStyle(paragraphProperties?.GetFirstChild<A.DefaultRunProperties>()),
+            runs);
+    }
+
+    private static TextStyleContext? ReadTextStyle(OpenXmlCompositeElement? properties)
+    {
+        if (properties is null)
+        {
+            return null;
+        }
+
+        var language = ReadStringAttribute(properties, "lang");
+        var latinTypeface = ReadStringAttribute(
+            properties.ChildElements.FirstOrDefault(child => child.LocalName == "latin"),
+            "typeface");
+        var eastAsianTypeface = ReadStringAttribute(
+            properties.ChildElements.FirstOrDefault(child => child.LocalName == "ea"),
+            "typeface");
+        var fontSize = ReadIntAttribute(properties, "sz") is { } size
+            ? size / 100d
+            : null;
+        var bold = ReadBooleanAttribute(properties, "b");
+        var color = ReadTextColor(properties);
+
+        if (language is null &&
+            latinTypeface is null &&
+            eastAsianTypeface is null &&
+            fontSize is null &&
+            bold is null &&
+            color is null)
+        {
+            return null;
+        }
+
+        return new TextStyleContext(
+            language,
+            latinTypeface,
+            eastAsianTypeface,
+            fontSize,
+            bold,
+            color);
+    }
+
+    private static TextColorContext? ReadTextColor(OpenXmlCompositeElement properties)
+    {
+        var solidFill = properties.ChildElements.FirstOrDefault(child => child.LocalName == "solidFill");
+        var color = solidFill?.ChildElements.FirstOrDefault();
+
+        if (color is null)
+        {
+            return null;
+        }
+
+        var value = color.LocalName == "sysClr"
+            ? ReadStringAttribute(color, "lastClr")
+            : ReadStringAttribute(color, "val");
+
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : new TextColorContext(color.LocalName, value);
+    }
+
+    private static bool TryReadLongAttribute(
+        OpenXmlElement? element,
+        string attributeName,
+        out long value)
+    {
+        return long.TryParse(
+            ReadStringAttribute(element, attributeName),
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out value);
+    }
+
+    private static int? ReadIntAttribute(OpenXmlElement? element, string attributeName)
+    {
+        return int.TryParse(
+            ReadStringAttribute(element, attributeName),
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var value)
+            ? value
+            : null;
+    }
+
+    private static bool? ReadBooleanAttribute(OpenXmlElement? element, string attributeName)
+    {
+        return ReadStringAttribute(element, attributeName) switch
+        {
+            "1" or "true" => true,
+            "0" or "false" => false,
+            _ => null,
+        };
+    }
+
+    private static string? ReadStringAttribute(OpenXmlElement? element, string attributeName)
+    {
+        if (element is null)
+        {
+            return null;
+        }
+
+        var value = element.GetAttributes()
+            .FirstOrDefault(attribute => attribute.LocalName == attributeName)
+            .Value;
+
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static SlideContext FailedSlide(

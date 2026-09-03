@@ -33,6 +33,29 @@ public sealed class OpenXmlDeckContextReaderTests
         Assert.Equal("Title 1", firstElement.Identity.Name);
         Assert.Equal(0, firstElement.ZOrder);
         Assert.Equal(ExtractionStatus.Succeeded, firstElement.Status);
+        var nativeGeometry = Assert.IsType<NativeGeometry>(firstElement.NativeGeometry);
+        Assert.Equal(1_000_000L, nativeGeometry.X);
+        Assert.Equal(GeometryCoordinateSpace.Slide, nativeGeometry.CoordinateSpace);
+        var normalizedGeometry = Assert.IsType<NormalizedGeometry>(firstElement.NormalizedGeometry);
+        Assert.Equal(
+            1_000_000d / 12_192_000d,
+            normalizedGeometry.X,
+            precision: 8);
+
+        var text = Assert.NotNull(firstElement.Text);
+        var paragraph = Assert.Single(text.Paragraphs);
+        Assert.Equal(0, paragraph.Level);
+        Assert.Equal("l", paragraph.Alignment);
+        Assert.Equal(18d, paragraph.DefaultStyle?.FontSizePoints);
+        Assert.Equal("Arial", paragraph.DefaultStyle?.LatinTypeface);
+        var run = Assert.Single(paragraph.Runs);
+        Assert.Equal(TextRunKind.Text, run.Kind);
+        Assert.Equal("Slide One", run.Text);
+        Assert.Equal("en-US", run.DirectStyle?.Language);
+        Assert.Equal(24d, run.DirectStyle?.FontSizePoints);
+        Assert.True(run.DirectStyle?.Bold is true);
+        Assert.Equal("srgbClr", run.DirectStyle?.Color?.Type);
+        Assert.Equal("D60000", run.DirectStyle?.Color?.Value);
 
         var secondElement = Assert.Single(document.Slides[1].Elements);
         Assert.Equal(ElementKind.Connector, secondElement.Kind);
@@ -73,6 +96,35 @@ public sealed class OpenXmlDeckContextReaderTests
         Assert.Equal("DCX-SLIDE-RELATIONSHIP-FAILED", diagnostic.Code);
         Assert.Equal(1, diagnostic.Source?.SlideIndex);
         Assert.Equal("rId1", diagnostic.Source?.RelationshipId);
+    }
+
+    [Fact]
+    public void Read_preserves_group_parentage_and_local_coordinate_space()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateGroup(directory.Path);
+        var reader = new OpenXmlDeckContextReader();
+
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Succeeded, document.Status);
+        var slide = Assert.Single(document.Slides);
+        Assert.Equal(2, slide.Elements.Count);
+
+        var group = slide.Elements[0];
+        Assert.Equal(ElementKind.Group, group.Kind);
+        Assert.Equal("10", group.Identity.Id);
+        Assert.Null(group.ParentGroupId);
+        Assert.Equal(GeometryCoordinateSpace.Slide, group.NativeGeometry?.CoordinateSpace);
+        Assert.NotNull(group.NormalizedGeometry);
+
+        var child = slide.Elements[1];
+        Assert.Equal(ElementKind.Shape, child.Kind);
+        Assert.Equal("11", child.Identity.Id);
+        Assert.Equal("10", child.ParentGroupId);
+        Assert.Equal(GeometryCoordinateSpace.ParentGroup, child.NativeGeometry?.CoordinateSpace);
+        Assert.Null(child.NormalizedGeometry);
+        Assert.Equal("Grouped evidence", child.Text?.Paragraphs[0].Runs[0].Text);
     }
 }
 

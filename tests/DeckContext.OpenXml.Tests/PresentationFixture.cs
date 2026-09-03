@@ -35,6 +35,20 @@ internal static class PresentationFixture
         return path;
     }
 
+    public static string CreateGroup(string directory)
+    {
+        var path = Path.Combine(directory, "groups-basic.pptx");
+
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        WriteEntry(archive, "[Content_Types].xml", ContentTypes(twoSlides: false));
+        WriteEntry(archive, "_rels/.rels", PackageRelationships);
+        WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
+        WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
+        WriteEntry(archive, "ppt/slides/slide1.xml", SlideWithGroup);
+
+        return path;
+    }
+
     public static string CreateMalformed(string directory)
     {
         var path = Path.Combine(directory, "malformed.pptx");
@@ -136,11 +150,27 @@ internal static class PresentationFixture
                   <p:cNvSpPr/>
                   <p:nvPr/>
                 </p:nvSpPr>
-                <p:spPr/>
+                <p:spPr>
+                  <a:xfrm>
+                    <a:off x="1000000" y="500000"/>
+                    <a:ext cx="6000000" cy="1000000"/>
+                  </a:xfrm>
+                </p:spPr>
                 <p:txBody>
                   <a:bodyPr/>
                   <a:lstStyle/>
-                  <a:p><a:r><a:t>Slide One</a:t></a:r></a:p>
+                  <a:p>
+                    <a:pPr lvl="0" algn="l">
+                      <a:defRPr sz="1800"><a:latin typeface="Arial"/></a:defRPr>
+                    </a:pPr>
+                    <a:r>
+                      <a:rPr lang="en-US" sz="2400" b="1">
+                        <a:solidFill><a:srgbClr val="D60000"/></a:solidFill>
+                        <a:latin typeface="Arial"/>
+                      </a:rPr>
+                      <a:t>Slide One</a:t>
+                    </a:r>
+                  </a:p>
                 </p:txBody>
               </p:sp>
             </p:spTree>
@@ -175,8 +205,72 @@ internal static class PresentationFixture
                   <p:cNvCxnSpPr/>
                   <p:nvPr/>
                 </p:nvCxnSpPr>
-                <p:spPr/>
+                <p:spPr>
+                  <a:xfrm>
+                    <a:off x="1200000" y="1400000"/>
+                    <a:ext cx="3000000" cy="100000"/>
+                  </a:xfrm>
+                </p:spPr>
               </p:cxnSp>
+            </p:spTree>
+          </p:cSld>
+          <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+        </p:sld>
+        """;
+
+    private const string SlideWithGroup = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+               xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+               xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:nvGrpSpPr>
+                <p:cNvPr id="1" name=""/>
+                <p:cNvGrpSpPr/>
+                <p:nvPr/>
+              </p:nvGrpSpPr>
+              <p:grpSpPr>
+                <a:xfrm>
+                  <a:off x="0" y="0"/>
+                  <a:ext cx="0" cy="0"/>
+                  <a:chOff x="0" y="0"/>
+                  <a:chExt cx="0" cy="0"/>
+                </a:xfrm>
+              </p:grpSpPr>
+              <p:grpSp>
+                <p:nvGrpSpPr>
+                  <p:cNvPr id="10" name="Evidence Group"/>
+                  <p:cNvGrpSpPr/>
+                  <p:nvPr/>
+                </p:nvGrpSpPr>
+                <p:grpSpPr>
+                  <a:xfrm>
+                    <a:off x="2000000" y="1000000"/>
+                    <a:ext cx="4000000" cy="2000000"/>
+                    <a:chOff x="0" y="0"/>
+                    <a:chExt cx="4000000" cy="2000000"/>
+                  </a:xfrm>
+                </p:grpSpPr>
+                <p:sp>
+                  <p:nvSpPr>
+                    <p:cNvPr id="11" name="Grouped Text"/>
+                    <p:cNvSpPr/>
+                    <p:nvPr/>
+                  </p:nvSpPr>
+                  <p:spPr>
+                    <a:xfrm>
+                      <a:off x="250000" y="300000"/>
+                      <a:ext cx="2000000" cy="500000"/>
+                    </a:xfrm>
+                  </p:spPr>
+                  <p:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p><a:r><a:t>Grouped evidence</a:t></a:r></a:p>
+                  </p:txBody>
+                </p:sp>
+              </p:grpSp>
             </p:spTree>
           </p:cSld>
           <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
