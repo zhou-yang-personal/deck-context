@@ -173,7 +173,104 @@ For code modifications requested in chat:
 
 Long design/architecture documents should preferably live in repository documentation rather than being dumped only into chat.
 
-## 14. Decision hierarchy
+## 14. CI build and manual verification gate
+
+When a phase or change requires the user to verify behavior on a real Windows machine, the verification package must be produced automatically by GitHub Actions. Do not require the user to clone the repository, install the .NET SDK, open Visual Studio, or build/publish locally.
+
+### 14.1 Development workflow requirement
+
+Phase 0 must establish a GitHub Actions development build workflow, normally under `.github/workflows/dev-build.yml`, that supports at least:
+
+- pushes to `dev`;
+- manual `workflow_dispatch`;
+- restore;
+- Release build;
+- automated tests;
+- Windows `win-x64` publish;
+- packaging of the runnable output;
+- upload of the package as a GitHub Actions artifact.
+
+The development verification package should be a self-contained Windows package unless implementation evidence requires a different packaging choice. Do not introduce installer/MSIX/code-signing work unless explicitly requested.
+
+### 14.2 Artifact traceability
+
+Every manual-verification artifact must be traceable to the exact source version. The phase report must identify at least:
+
+- branch;
+- full commit SHA;
+- short commit SHA;
+- build configuration;
+- runtime target;
+- workflow run;
+- automated test result;
+- artifact name;
+- direct artifact download link when available.
+
+Recommended artifact naming:
+
+`DeckContext-dev-win-x64-{short-sha}`
+
+Never present an old artifact as the result of a newer code change.
+
+### 14.3 CI gate
+
+A build may be handed to the user for manual verification only after all applicable steps succeed:
+
+- restore;
+- Release build;
+- automated tests;
+- publish;
+- artifact upload.
+
+If any required step fails, report `CI Failed`, fix the problem, and rebuild before requesting manual verification.
+
+### 14.4 Manual verification decision
+
+Every phase report must contain:
+
+`Manual Verification Required: Yes / No`
+
+Prefer automated verification when behavior can be reliably asserted by tests. Manual verification is particularly appropriate for:
+
+- WPF UI and drag/drop/file dialogs;
+- Windows file-system behavior and output-folder workflow;
+- optional PowerPoint Interop behavior;
+- complex real-world PPT chart extraction;
+- embedded workbook extraction against real-world PPTs;
+- whether generated Markdown is genuinely usable as LLM material;
+- packaged application startup on the target Windows environment.
+
+At minimum, plan explicit manual verification gates around:
+
+- native Chart + Embedded Excel integration;
+- WPF UI completion;
+- final V1 acceptance.
+
+### 14.5 Manual verification handoff
+
+When `Manual Verification Required: Yes`, the report must provide:
+
+- source commit;
+- CI status;
+- workflow run;
+- artifact name;
+- artifact download link;
+- minimal run instructions;
+- a short checklist limited to behavior changed in that phase;
+- expected result;
+- known limitations.
+
+Do not ask the user to perform development commands.
+
+If manual verification is a blocking gate, do not mark that phase `Accepted` until the user reports the result. If the user finds a defect, fix it, rerun automated tests/CI, generate a new artifact, and provide the new artifact rather than reusing the old package.
+
+### 14.6 Artifact vs release
+
+Use GitHub Actions artifacts for normal `dev` verification builds.
+
+Do not create a GitHub Release for every development build. Releases/assets are reserved for an explicitly requested baseline/release/main promotion.
+
+## 15. Decision hierarchy
 
 When requirements conflict, apply in this order:
 
