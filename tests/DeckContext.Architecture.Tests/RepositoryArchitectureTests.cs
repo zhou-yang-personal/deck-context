@@ -19,6 +19,8 @@ public sealed class RepositoryArchitectureTests
             "DeckContext.OpenXml",
             "DeckContext.Export",
             "DeckContext.Architecture.Tests",
+            "DeckContext.OpenXml.Tests",
+            "DeckContext.Export.Tests",
         };
 
         foreach (var project in expectedProjects)

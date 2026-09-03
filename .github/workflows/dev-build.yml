@@ -39,7 +39,7 @@ jobs:
         run: dotnet build DeckContext.sln --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test tests/DeckContext.Architecture.Tests/DeckContext.Architecture.Tests.csproj --configuration Release --no-build
+        run: dotnet test DeckContext.sln --configuration Release --no-build
 
       - name: Publish Windows x64 self-contained package
         run: >-

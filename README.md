@@ -54,7 +54,7 @@ The repository requires the .NET 10 SDK. From the repository root:
 ```powershell
 dotnet restore DeckContext.sln
 dotnet build DeckContext.sln --configuration Release --no-restore
-dotnet test tests/DeckContext.Architecture.Tests/DeckContext.Architecture.Tests.csproj --configuration Release --no-build
+dotnet test DeckContext.sln --configuration Release --no-build
 ```
 
 Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF shell as a self-contained `win-x64` package, and upload a commit-traceable GitHub Actions artifact.
@@ -68,4 +68,4 @@ Unless explicitly requested otherwise, future implementation work should target 
 
 ## Status
 
-Phase 0 engineering bootstrap is established on `dev`. PPTX extraction behavior begins in Phase 1; the current WPF shell intentionally exposes no extraction workflow.
+Phase 0 engineering bootstrap is complete. Phase 1 implements the normalized IR foundation, PPTX package/slide enumeration, source relationships, top-level element identity, diagnostics, and deterministic JSON serialization. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
