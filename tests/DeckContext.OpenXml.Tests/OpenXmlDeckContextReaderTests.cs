@@ -12,7 +12,7 @@ public sealed class OpenXmlDeckContextReaderTests
         var path = PresentationFixture.CreateBasic(directory.Path);
         var reader = new OpenXmlDeckContextReader();
 
-        var document = reader.Read(path);
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
 
         Assert.Equal(ExtractionStatus.Succeeded, document.Status);
         Assert.Equal("presentation-basic.pptx", document.Deck.SourceFileName);
@@ -47,7 +47,7 @@ public sealed class OpenXmlDeckContextReaderTests
         var path = PresentationFixture.CreateMalformed(directory.Path);
         var reader = new OpenXmlDeckContextReader();
 
-        var document = reader.Read(path);
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
 
         Assert.Equal(ExtractionStatus.Failed, document.Status);
         Assert.Empty(document.Slides);
@@ -63,7 +63,7 @@ public sealed class OpenXmlDeckContextReaderTests
         var path = PresentationFixture.CreateMissingSlideRelationship(directory.Path);
         var reader = new OpenXmlDeckContextReader();
 
-        var document = reader.Read(path);
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
 
         Assert.Equal(ExtractionStatus.Partial, document.Status);
         var slide = Assert.Single(document.Slides);
