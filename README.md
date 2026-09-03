@@ -68,4 +68,4 @@ Unless explicitly requested otherwise, future implementation work should target 
 
 ## Status
 
-Phase 0 engineering bootstrap is complete. Phase 1 implements the normalized IR foundation, PPTX package/slide enumeration, source relationships, top-level element identity, diagnostics, and deterministic JSON serialization. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
+Phases 0–3 are complete on `dev`: engineering/CI bootstrap, normalized IR and package/slide foundations, direct text and geometry extraction, group parentage, and structured native PowerPoint table extraction. Phase 4 begins native Chart extraction. The current WPF shell intentionally exposes no extraction workflow before Phase 8.

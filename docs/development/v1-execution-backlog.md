@@ -4,6 +4,8 @@ Status: Active
 Target branch: `dev`  
 Source of truth: `AGENTS.md`, `docs/requirements/v1-baseline.md`, and `docs/architecture/5-view-architecture-v0.1.md`
 
+Current implementation boundary: Phases 0–3 completed on `dev`; Phase 4 is next.
+
 ## Planning rules
 
 - The backlog decomposes the confirmed V1 baseline; it does not add product scope.
