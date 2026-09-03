@@ -489,7 +489,7 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         var eastAsianTypeface = ReadStringAttribute(
             properties.ChildElements.FirstOrDefault(child => child.LocalName == "ea"),
             "typeface");
-        var fontSize = ReadIntAttribute(properties, "sz") is { } size
+        double? fontSize = ReadIntAttribute(properties, "sz") is { } size
             ? size / 100d
             : null;
         var bold = ReadBooleanAttribute(properties, "b");
