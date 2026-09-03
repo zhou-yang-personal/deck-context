@@ -68,4 +68,4 @@ Unless explicitly requested otherwise, future implementation work should target 
 
 ## Status
 
-Phases 0–3 are complete on `dev`: engineering/CI bootstrap, normalized IR and package/slide foundations, direct text and geometry extraction, group parentage, and structured native PowerPoint table extraction. Phase 4 begins native Chart extraction. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
+Phases 0–4 are complete on `dev`: engineering/CI bootstrap, normalized IR and package/slide foundations, direct text and geometry extraction, group parentage, structured native PowerPoint table extraction, and source-backed native chart extraction. Phase 5 follows chart formulas and relationships into embedded Excel workbooks. The current WPF shell intentionally exposes no extraction workflow before Phase 8.

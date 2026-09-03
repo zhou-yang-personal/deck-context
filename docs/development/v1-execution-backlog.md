@@ -4,7 +4,7 @@ Status: Active
 Target branch: `dev`  
 Source of truth: `AGENTS.md`, `docs/requirements/v1-baseline.md`, and `docs/architecture/5-view-architecture-v0.1.md`
 
-Current implementation boundary: Phases 0–3 completed on `dev`; Phase 4 is next.
+Current implementation boundary: Phases 0–4 completed on `dev`; Phase 5 is next. Native chart extraction now preserves chart-part relationships, plot types, series names, category/value caches, source formulas, axes, legends, and data-label settings. Unsupported chart variants and broken chart relationships degrade at the affected element.
 
 ## Planning rules
 

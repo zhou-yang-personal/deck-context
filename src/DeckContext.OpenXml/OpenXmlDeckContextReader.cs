@@ -204,6 +204,7 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         var elements = new List<SlideElementContext>();
         ReadElements(
             shapeTree,
+            slidePart,
             sourceFileName,
             slideIndex,
             relationshipId,
@@ -219,6 +220,7 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
 
     private static void ReadElements(
         OpenXmlCompositeElement container,
+        SlidePart slidePart,
         string sourceFileName,
         int slideIndex,
         string relationshipId,
@@ -249,7 +251,6 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 elementName);
 
             var diagnostics = new List<ExtractionDiagnostic>();
-            var status = ExtractionStatus.Succeeded;
             var nativeGeometry = ReadNativeGeometry(sourceElement, coordinateSpace);
             var normalizedGeometry = coordinateSpace == GeometryCoordinateSpace.Slide
                 ? NormalizeGeometry(nativeGeometry, slideWidth, slideHeight, source, diagnostics)
@@ -258,6 +259,11 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             var table = kind == ElementKind.Table
                 ? ReadTable(sourceElement, source, diagnostics)
                 : null;
+            var chartResult = kind == ElementKind.Chart && sourceElement is P.GraphicFrame chartFrame
+                ? OpenXmlChartExtractor.Extract(chartFrame, slidePart, source, diagnostics)
+                : null;
+            var chart = chartResult?.Chart;
+            var status = chartResult?.Status ?? ExtractionStatus.Succeeded;
 
             if (kind == ElementKind.Unknown)
             {
@@ -272,7 +278,11 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             }
             else if (nativeGeometry is null)
             {
-                status = ExtractionStatus.Partial;
+                if (status == ExtractionStatus.Succeeded)
+                {
+                    status = ExtractionStatus.Partial;
+                }
+
                 diagnostics.Add(new ExtractionDiagnostic(
                     "DCX-GEOMETRY-NOT-DIRECT",
                     "The element does not contain a directly declared transform; geometry was not inferred.",
@@ -311,13 +321,15 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 diagnostics,
                 parentGroupId,
                 text,
-                table);
+                table,
+                chart);
             elements.Add(element);
 
             if (sourceElement is P.GroupShape groupShape)
             {
                 ReadElements(
                     groupShape,
+                    slidePart,
                     sourceFileName,
                     slideIndex,
                     relationshipId,
@@ -344,6 +356,7 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             P.Shape => ElementKind.Shape,
             P.Picture => ElementKind.Picture,
             P.GraphicFrame graphicFrame when FindTable(graphicFrame) is not null => ElementKind.Table,
+            P.GraphicFrame graphicFrame when OpenXmlChartExtractor.IsChart(graphicFrame) => ElementKind.Chart,
             P.GraphicFrame => ElementKind.GraphicFrame,
             P.GroupShape => ElementKind.Group,
             P.ConnectionShape => ElementKind.Connector,

@@ -1,3 +1,4 @@
+using DeckContext.Domain.Diagnostics;
 using DeckContext.Domain.Extraction;
 using DeckContext.Domain.Model;
 
@@ -161,6 +162,116 @@ public sealed class OpenXmlDeckContextReaderTests
         var mergeContinuation = table.Rows[0].Cells[1];
         Assert.True(mergeContinuation.IsHorizontalMergeContinuation);
         Assert.Equal("$35", table.Rows[1].Cells[2].Text.Paragraphs[0].Runs[0].Text);
+    }
+
+    [Fact]
+    public void Read_extracts_native_chart_structure_cached_data_formulas_and_presentation_state()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateChart(directory.Path);
+        var reader = new OpenXmlDeckContextReader();
+
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Succeeded, document.Status);
+        var slide = Assert.Single(document.Slides);
+        var element = Assert.Single(slide.Elements);
+        Assert.Equal(ElementKind.Chart, element.Kind);
+        Assert.Equal("30", element.Identity.Id);
+        Assert.Equal("Subscriber Growth", element.Identity.Name);
+        Assert.Equal(ExtractionStatus.Succeeded, element.Status);
+
+        var chart = Assert.IsType<ChartContext>(element.Chart);
+        Assert.Equal("rId1", chart.RelationshipId);
+        Assert.Equal("/ppt/charts/chart1.xml", chart.PartUri);
+        Assert.Equal("Subscriber Growth", chart.Title);
+
+        var plot = Assert.Single(chart.Plots);
+        Assert.Equal("barChart", plot.Type);
+        Assert.Equal(2, plot.Series.Count);
+        Assert.True(plot.DataLabels.IsPresent);
+        Assert.Equal("outEnd", plot.DataLabels.Position);
+        Assert.Equal("#,##0", plot.DataLabels.NumberFormatCode);
+        Assert.True(plot.DataLabels.NumberFormatLinkedToSource is true);
+        Assert.Equal(";", plot.DataLabels.Separator);
+        Assert.True(plot.DataLabels.ShowValue is true);
+        Assert.True(plot.DataLabels.ShowCategoryName is false);
+
+        var firstSeries = plot.Series[0];
+        Assert.Equal(0, firstSeries.Index);
+        Assert.Equal(0, firstSeries.Order);
+        Assert.Equal("Operator A", firstSeries.Name);
+        Assert.Equal("Data!$B$1", firstSeries.NameFormula);
+        var categories = Assert.IsType<ChartDataSourceContext>(firstSeries.Categories);
+        Assert.Equal("Data!$A$2:$A$4", categories.Formula);
+        Assert.Equal<string?>(["2024", "2025", "2026"], categories.Points.Select(point => point.Value));
+        var values = Assert.IsType<ChartDataSourceContext>(firstSeries.Values);
+        Assert.Equal("Data!$B$2:$B$4", values.Formula);
+        Assert.Equal("#,##0", values.NumberFormatCode);
+        Assert.Equal<double?>([100d, 125.5d, 150d], values.Points.Select(point => point.NumericValue));
+
+        Assert.True(chart.Legend.IsPresent);
+        Assert.Equal("r", chart.Legend.Position);
+        Assert.True(chart.Legend.Overlay is false);
+        Assert.Equal(2, chart.Legend.Entries.Count);
+        Assert.True(chart.Legend.Entries[0].IsVisible);
+        Assert.False(chart.Legend.Entries[1].IsVisible);
+
+        Assert.Equal(2, chart.Axes.Count);
+        var valueAxis = Assert.Single(chart.Axes, axis => axis.Type == "valAx");
+        Assert.Equal("1002", valueAxis.Id);
+        Assert.Equal("1001", valueAxis.CrossAxisId);
+        Assert.Equal("Subscribers", valueAxis.Title);
+        Assert.Equal("#,##0", valueAxis.NumberFormatCode);
+        Assert.True(valueAxis.NumberFormatLinkedToSource is false);
+        Assert.Equal(0d, valueAxis.Minimum);
+        Assert.Equal(200d, valueAxis.Maximum);
+        Assert.Equal(50d, valueAxis.MajorUnit);
+        Assert.Equal(10d, valueAxis.MinorUnit);
+    }
+
+    [Fact]
+    public void Read_marks_only_an_unsupported_chart_variant_as_unsupported()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateUnsupportedChart(directory.Path);
+        var reader = new OpenXmlDeckContextReader();
+
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Partial, document.Status);
+        var slide = Assert.Single(document.Slides);
+        Assert.Equal(ExtractionStatus.Partial, slide.Status);
+        var element = Assert.Single(slide.Elements);
+        Assert.Equal(ElementKind.Chart, element.Kind);
+        Assert.Equal(ExtractionStatus.Unsupported, element.Status);
+        Assert.Equal("surface3DChart", Assert.Single(element.Chart?.Plots ?? []).Type);
+        var diagnostic = Assert.Single(element.Diagnostics);
+        Assert.Equal("DCX-CHART-TYPE-UNSUPPORTED", diagnostic.Code);
+        Assert.Equal("ChartExtractor", diagnostic.Extractor);
+        Assert.Equal(DiagnosticOutcome.Partial, diagnostic.Outcome);
+        Assert.NotNull(element.Chart);
+    }
+
+    [Fact]
+    public void Read_degrades_only_a_chart_with_an_unresolved_relationship()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateMissingChartRelationship(directory.Path);
+        var reader = new OpenXmlDeckContextReader();
+
+        var document = reader.Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Partial, document.Status);
+        var slide = Assert.Single(document.Slides);
+        Assert.Equal(ExtractionStatus.Partial, slide.Status);
+        var element = Assert.Single(slide.Elements);
+        Assert.Equal(ElementKind.Chart, element.Kind);
+        Assert.Equal(ExtractionStatus.Failed, element.Status);
+        Assert.Null(element.Chart);
+        var diagnostic = Assert.Single(element.Diagnostics);
+        Assert.Equal("DCX-CHART-RELATIONSHIP-FAILED", diagnostic.Code);
+        Assert.Equal(DiagnosticOutcome.Skipped, diagnostic.Outcome);
     }
 }
 

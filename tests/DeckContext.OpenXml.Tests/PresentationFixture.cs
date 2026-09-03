@@ -63,6 +63,30 @@ internal static class PresentationFixture
         return path;
     }
 
+    public static string CreateChart(string directory)
+    {
+        return CreateChartPackage(directory, "chart-basic.pptx", BasicChart);
+    }
+
+    public static string CreateUnsupportedChart(string directory)
+    {
+        return CreateChartPackage(directory, "chart-unsupported.pptx", UnsupportedChart);
+    }
+
+    public static string CreateMissingChartRelationship(string directory)
+    {
+        var path = Path.Combine(directory, "chart-missing-relationship.pptx");
+
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        WriteEntry(archive, "[Content_Types].xml", ContentTypes(twoSlides: false));
+        WriteEntry(archive, "_rels/.rels", PackageRelationships);
+        WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
+        WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
+        WriteEntry(archive, "ppt/slides/slide1.xml", SlideWithChart);
+
+        return path;
+    }
+
     public static string CreateMalformed(string directory)
     {
         var path = Path.Combine(directory, "malformed.pptx");
@@ -79,10 +103,32 @@ internal static class PresentationFixture
         writer.Write(content);
     }
 
-    private static string ContentTypes(bool twoSlides)
+    private static string CreateChartPackage(
+        string directory,
+        string fileName,
+        string chartXml)
+    {
+        var path = Path.Combine(directory, fileName);
+
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        WriteEntry(archive, "[Content_Types].xml", ContentTypes(twoSlides: false, hasChart: true));
+        WriteEntry(archive, "_rels/.rels", PackageRelationships);
+        WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
+        WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
+        WriteEntry(archive, "ppt/slides/slide1.xml", SlideWithChart);
+        WriteEntry(archive, "ppt/slides/_rels/slide1.xml.rels", SlideChartRelationships);
+        WriteEntry(archive, "ppt/charts/chart1.xml", chartXml);
+
+        return path;
+    }
+
+    private static string ContentTypes(bool twoSlides, bool hasChart = false)
     {
         var secondSlide = twoSlides
             ? "<Override PartName=\"/ppt/slides/slide2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slide+xml\"/>"
+            : string.Empty;
+        var chart = hasChart
+            ? "<Override PartName=\"/ppt/charts/chart1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
             : string.Empty;
 
         return $"""
@@ -93,6 +139,7 @@ internal static class PresentationFixture
               <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
               <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
               {secondSlide}
+              {chart}
             </Types>
             """;
     }
@@ -135,6 +182,13 @@ internal static class PresentationFixture
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
           <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+        </Relationships>
+        """;
+
+    private const string SlideChartRelationships = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
         </Relationships>
         """;
 
@@ -369,5 +423,119 @@ internal static class PresentationFixture
           </p:cSld>
           <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
         </p:sld>
+        """;
+
+    private const string SlideWithChart = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+               xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+               xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+               xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:nvGrpSpPr>
+                <p:cNvPr id="1" name=""/>
+                <p:cNvGrpSpPr/>
+                <p:nvPr/>
+              </p:nvGrpSpPr>
+              <p:grpSpPr>
+                <a:xfrm>
+                  <a:off x="0" y="0"/>
+                  <a:ext cx="0" cy="0"/>
+                  <a:chOff x="0" y="0"/>
+                  <a:chExt cx="0" cy="0"/>
+                </a:xfrm>
+              </p:grpSpPr>
+              <p:graphicFrame>
+                <p:nvGraphicFramePr>
+                  <p:cNvPr id="30" name="Subscriber Growth"/>
+                  <p:cNvGraphicFramePr/>
+                  <p:nvPr/>
+                </p:nvGraphicFramePr>
+                <p:xfrm>
+                  <a:off x="1200000" y="900000"/>
+                  <a:ext cx="9000000" cy="4800000"/>
+                </p:xfrm>
+                <a:graphic>
+                  <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">
+                    <c:chart r:id="rId1"/>
+                  </a:graphicData>
+                </a:graphic>
+              </p:graphicFrame>
+            </p:spTree>
+          </p:cSld>
+          <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+        </p:sld>
+        """;
+
+    private const string BasicChart = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+                      xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+                      xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+          <c:chart>
+            <c:title>
+              <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Subscriber Growth</a:t></a:r></a:p></c:rich></c:tx>
+            </c:title>
+            <c:plotArea>
+              <c:layout/>
+              <c:barChart>
+                <c:barDir val="col"/>
+                <c:grouping val="clustered"/>
+                <c:ser>
+                  <c:idx val="0"/><c:order val="0"/>
+                  <c:tx><c:strRef><c:f>Data!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Operator A</c:v></c:pt></c:strCache></c:strRef></c:tx>
+                  <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>2024</c:v></c:pt><c:pt idx="1"><c:v>2025</c:v></c:pt><c:pt idx="2"><c:v>2026</c:v></c:pt></c:strCache></c:strRef></c:cat>
+                  <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f><c:numCache><c:formatCode>#,##0</c:formatCode><c:ptCount val="3"/><c:pt idx="0"><c:v>100</c:v></c:pt><c:pt idx="1"><c:v>125.5</c:v></c:pt><c:pt idx="2"><c:v>150</c:v></c:pt></c:numCache></c:numRef></c:val>
+                </c:ser>
+                <c:ser>
+                  <c:idx val="1"/><c:order val="1"/>
+                  <c:tx><c:v>Operator B</c:v></c:tx>
+                  <c:cat><c:strLit><c:ptCount val="3"/><c:pt idx="0"><c:v>2024</c:v></c:pt><c:pt idx="1"><c:v>2025</c:v></c:pt><c:pt idx="2"><c:v>2026</c:v></c:pt></c:strLit></c:cat>
+                  <c:val><c:numLit><c:formatCode>0</c:formatCode><c:ptCount val="3"/><c:pt idx="0"><c:v>80</c:v></c:pt><c:pt idx="1"><c:v>110</c:v></c:pt><c:pt idx="2"><c:v>145</c:v></c:pt></c:numLit></c:val>
+                </c:ser>
+                <c:dLbls><c:numFmt formatCode="#,##0" sourceLinked="1"/><c:dLblPos val="outEnd"/><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:separator>;</c:separator></c:dLbls>
+                <c:axId val="1001"/><c:axId val="1002"/>
+              </c:barChart>
+              <c:catAx>
+                <c:axId val="1001"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="b"/>
+                <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Year</a:t></a:r></a:p></c:rich></c:tx></c:title>
+                <c:crossAx val="1002"/>
+              </c:catAx>
+              <c:valAx>
+                <c:axId val="1002"/><c:scaling><c:min val="0"/><c:max val="200"/></c:scaling><c:axPos val="l"/>
+                <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Subscribers</a:t></a:r></a:p></c:rich></c:tx></c:title>
+                <c:numFmt formatCode="#,##0" sourceLinked="0"/><c:majorUnit val="50"/><c:minorUnit val="10"/><c:crossAx val="1001"/>
+              </c:valAx>
+            </c:plotArea>
+            <c:legend>
+              <c:legendPos val="r"/>
+              <c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>
+              <c:overlay val="0"/>
+            </c:legend>
+          </c:chart>
+        </c:chartSpace>
+        """;
+
+    private const string UnsupportedChart = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+                      xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+          <c:chart>
+            <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Unsupported Surface</a:t></a:r></a:p></c:rich></c:tx></c:title>
+            <c:plotArea>
+              <c:layout/>
+              <c:surface3DChart>
+                <c:wireframe val="0"/>
+                <c:ser>
+                  <c:idx val="0"/><c:order val="0"/>
+                  <c:tx><c:v>Surface</c:v></c:tx>
+                  <c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strLit></c:cat>
+                  <c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numLit></c:val>
+                </c:ser>
+              </c:surface3DChart>
+            </c:plotArea>
+          </c:chart>
+        </c:chartSpace>
         """;
 }
