@@ -63,6 +63,16 @@ internal static class PresentationFixture
         return path;
     }
 
+    public static string CreateImage(string directory)
+    {
+        return CreateImagePackage(directory, "images-basic.pptx", includeRelationship: true);
+    }
+
+    public static string CreateMissingImageRelationship(string directory)
+    {
+        return CreateImagePackage(directory, "images-missing-relationship.pptx", includeRelationship: false);
+    }
+
     public static string CreateChart(string directory)
     {
         return CreateChartPackage(directory, "chart-basic.pptx", BasicChart);
@@ -159,10 +169,34 @@ internal static class PresentationFixture
         return path;
     }
 
+    private static string CreateImagePackage(
+        string directory,
+        string fileName,
+        bool includeRelationship)
+    {
+        var path = Path.Combine(directory, fileName);
+
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        WriteEntry(archive, "[Content_Types].xml", ContentTypes(twoSlides: false, hasImage: true));
+        WriteEntry(archive, "_rels/.rels", PackageRelationships);
+        WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
+        WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
+        WriteEntry(archive, "ppt/slides/slide1.xml", SlideWithImage);
+
+        if (includeRelationship)
+        {
+            WriteEntry(archive, "ppt/slides/_rels/slide1.xml.rels", SlideImageRelationships);
+            WriteBinaryEntry(archive, "ppt/media/image1.png", ImagePng);
+        }
+
+        return path;
+    }
+
     private static string ContentTypes(
         bool twoSlides,
         bool hasChart = false,
-        bool hasWorkbook = false)
+        bool hasWorkbook = false,
+        bool hasImage = false)
     {
         var secondSlide = twoSlides
             ? "<Override PartName=\"/ppt/slides/slide2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slide+xml\"/>"
@@ -172,6 +206,9 @@ internal static class PresentationFixture
             : string.Empty;
         var workbook = hasWorkbook
             ? "<Default Extension=\"xlsx\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"/>"
+            : string.Empty;
+        var image = hasImage
+            ? "<Default Extension=\"png\" ContentType=\"image/png\"/>"
             : string.Empty;
 
         return $"""
@@ -184,6 +221,7 @@ internal static class PresentationFixture
               {secondSlide}
               {chart}
               {workbook}
+              {image}
             </Types>
             """;
     }
@@ -250,6 +288,13 @@ internal static class PresentationFixture
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
           <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
+        </Relationships>
+        """;
+
+    private const string SlideImageRelationships = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
         </Relationships>
         """;
 
@@ -591,6 +636,51 @@ internal static class PresentationFixture
           <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
         </p:sld>
         """;
+
+    private const string SlideWithImage = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+               xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+               xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:nvGrpSpPr>
+                <p:cNvPr id="1" name=""/>
+                <p:cNvGrpSpPr/>
+                <p:nvPr/>
+              </p:nvGrpSpPr>
+              <p:grpSpPr>
+                <a:xfrm>
+                  <a:off x="0" y="0"/><a:ext cx="0" cy="0"/>
+                  <a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/>
+                </a:xfrm>
+              </p:grpSpPr>
+              <p:pic>
+                <p:nvPicPr>
+                  <p:cNvPr id="40" name="Market Map" descr="Source-backed market coverage map" title="Coverage map"/>
+                  <p:cNvPicPr/><p:nvPr/>
+                </p:nvPicPr>
+                <p:blipFill>
+                  <a:blip r:embed="rId1"/>
+                  <a:srcRect l="10000" t="20000" r="5000" b="0"/>
+                  <a:stretch><a:fillRect/></a:stretch>
+                </p:blipFill>
+                <p:spPr>
+                  <a:xfrm rot="5400000" flipH="1" flipV="0">
+                    <a:off x="1200000" y="900000"/>
+                    <a:ext cx="6000000" cy="4000000"/>
+                  </a:xfrm>
+                  <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                </p:spPr>
+              </p:pic>
+            </p:spTree>
+          </p:cSld>
+          <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+        </p:sld>
+        """;
+
+    private static readonly byte[] ImagePng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
     private const string BasicChart = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

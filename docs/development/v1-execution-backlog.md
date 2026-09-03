@@ -4,7 +4,7 @@ Status: Active
 Target branch: `dev`  
 Source of truth: `AGENTS.md`, `docs/requirements/v1-baseline.md`, and `docs/architecture/5-view-architecture-v0.1.md`
 
-Current implementation boundary: Phases 0–4 completed on `dev`; Phase 5 implementation is complete and awaits Gate A manual acceptance. Native chart extraction now follows internal chart data relationships into embedded workbooks, maps referenced worksheets/ranges/cells, preserves formula/raw/resolved values and asset hashes, compares workbook cells with chart caches, and degrades only the affected chart when workbook evidence is unavailable or inconsistent.
+Current implementation boundary: Phases 0–4 completed on `dev`; Phase 5 implementation is complete and awaits Gate A manual acceptance; Phase 6 implementation is complete. Images now retain internal/external media relationships, content metadata, SHA-256, native alternative text, crop/rotation/flip state and an explicit pixel-interpretation status. Exact internal media can be exported, while missing relationships degrade only the affected picture and no OCR/Vision semantics are fabricated.
 
 ## Planning rules
 

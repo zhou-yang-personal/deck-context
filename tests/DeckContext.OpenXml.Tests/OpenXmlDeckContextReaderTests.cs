@@ -380,6 +380,110 @@ public sealed class OpenXmlDeckContextReaderTests
         Assert.Equal("EmbeddedWorkbookExtractor", diagnostic.Extractor);
         Assert.Equal(DiagnosticOutcome.Partial, diagnostic.Outcome);
     }
+
+    [Fact]
+    public void Read_extracts_image_media_crop_transform_and_explicit_not_configured_interpretation()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateImage(directory.Path);
+
+        var document = new OpenXmlDeckContextReader().Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Succeeded, document.Status);
+        var element = Assert.Single(Assert.Single(document.Slides).Elements);
+        Assert.Equal(ElementKind.Picture, element.Kind);
+        Assert.Equal("40", element.Identity.Id);
+        Assert.Equal("Market Map", element.Identity.Name);
+        Assert.Equal(ExtractionStatus.Succeeded, element.Status);
+        Assert.Equal(1_200_000L, element.NativeGeometry?.X);
+        Assert.Equal(6_000_000L, element.NativeGeometry?.Width);
+
+        var image = Assert.IsType<ImageContext>(element.Image);
+        Assert.Equal(ExtractionStatus.Succeeded, image.Status);
+        Assert.Equal("rId1", image.RelationshipId);
+        Assert.Equal("/ppt/media/image1.png", image.PartUri);
+        Assert.Null(image.ExternalUri);
+        Assert.Equal("image/png", image.ContentType);
+        Assert.Equal(".png", image.FileExtension);
+        Assert.Equal("image1.png", image.SuggestedFileName);
+        Assert.True(image.SizeBytes > 0);
+        Assert.Matches("^[0-9a-f]{64}$", image.Sha256);
+        Assert.Equal("Source-backed market coverage map", image.AlternativeText);
+        Assert.Equal("Coverage map", image.Title);
+
+        var crop = Assert.IsType<ImageCropContext>(image.Crop);
+        Assert.Equal(10_000, crop.LeftRaw);
+        Assert.Equal(20_000, crop.TopRaw);
+        Assert.Equal(5_000, crop.RightRaw);
+        Assert.Equal(0, crop.BottomRaw);
+        Assert.Equal(0.1d, crop.LeftFraction);
+        Assert.Equal(0.2d, crop.TopFraction);
+        Assert.Equal(0.05d, crop.RightFraction);
+        Assert.Equal(0d, crop.BottomFraction);
+
+        Assert.Equal(5_400_000L, image.Transform.RotationUnits);
+        Assert.Equal(90d, image.Transform.RotationDegrees);
+        Assert.True(image.Transform.FlipHorizontal is true);
+        Assert.True(image.Transform.FlipVertical is false);
+        Assert.Equal(ImageContentInterpretationStatus.NotConfigured, image.Interpretation.Status);
+        Assert.Null(image.Interpretation.ProviderId);
+        Assert.Null(image.Interpretation.Text);
+        Assert.Null(image.Interpretation.Description);
+
+        var diagnostic = Assert.Single(
+            element.Diagnostics,
+            item => item.Code == "DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED");
+        Assert.Equal(DiagnosticSeverity.Information, diagnostic.Severity);
+        Assert.Equal(DiagnosticOutcome.None, diagnostic.Outcome);
+    }
+
+    [Fact]
+    public void Export_copies_the_exact_traced_image_asset()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateImage(directory.Path);
+        var document = new OpenXmlDeckContextReader().Read(path, TestContext.Current.CancellationToken);
+        var image = Assert.IsType<ImageContext>(
+            Assert.Single(Assert.Single(document.Slides).Elements).Image);
+        var destination = Path.Combine(directory.Path, "exported", image.SuggestedFileName!);
+
+        new OpenXmlImageAssetExporter().Export(
+            path,
+            image,
+            destination,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(destination));
+        var bytes = File.ReadAllBytes(destination);
+        Assert.Equal(
+            image.Sha256,
+            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+        Assert.Equal<byte>([0x89, 0x50, 0x4E, 0x47], bytes.Take(4));
+    }
+
+    [Fact]
+    public void Read_marks_only_picture_failed_when_its_media_relationship_is_missing()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateMissingImageRelationship(directory.Path);
+
+        var document = new OpenXmlDeckContextReader().Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Partial, document.Status);
+        var element = Assert.Single(Assert.Single(document.Slides).Elements);
+        Assert.Equal(ElementKind.Picture, element.Kind);
+        Assert.Equal(ExtractionStatus.Failed, element.Status);
+        var image = Assert.IsType<ImageContext>(element.Image);
+        Assert.Equal(ExtractionStatus.Failed, image.Status);
+        Assert.Equal("rId1", image.RelationshipId);
+        Assert.Null(image.PartUri);
+        Assert.Null(image.Sha256);
+        Assert.Equal(ImageContentInterpretationStatus.NotConfigured, image.Interpretation.Status);
+        var diagnostic = Assert.Single(
+            element.Diagnostics,
+            item => item.Code == "DCX-IMAGE-RELATIONSHIP-FAILED");
+        Assert.Equal(DiagnosticOutcome.Skipped, diagnostic.Outcome);
+    }
 }
 
 internal sealed class TemporaryDirectory : IDisposable

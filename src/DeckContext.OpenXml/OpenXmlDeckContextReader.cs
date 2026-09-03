@@ -262,8 +262,12 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             var chartResult = kind == ElementKind.Chart && sourceElement is P.GraphicFrame chartFrame
                 ? OpenXmlChartExtractor.Extract(chartFrame, slidePart, source, diagnostics)
                 : null;
+            var imageResult = kind == ElementKind.Picture && sourceElement is P.Picture picture
+                ? OpenXmlImageExtractor.Extract(picture, slidePart, source, diagnostics)
+                : null;
             var chart = chartResult?.Chart;
-            var status = chartResult?.Status ?? ExtractionStatus.Succeeded;
+            var image = imageResult?.Image;
+            var status = chartResult?.Status ?? imageResult?.Status ?? ExtractionStatus.Succeeded;
 
             if (kind == ElementKind.Unknown)
             {
@@ -322,7 +326,8 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 parentGroupId,
                 text,
                 table,
-                chart);
+                chart,
+                image);
             elements.Add(element);
 
             if (sourceElement is P.GroupShape groupShape)

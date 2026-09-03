@@ -127,4 +127,65 @@ public sealed class DeckContextJsonSerializerTests
             .GetProperty("formula")
             .GetString());
     }
+
+    [Fact]
+    public void Serialize_explicitly_preserves_image_provenance_and_not_configured_interpretation()
+    {
+        var image = new ImageContext(
+            "rId2",
+            "/ppt/media/image1.png",
+            null,
+            "image/png",
+            ".png",
+            "image1.png",
+            128,
+            new string('a', 64),
+            "Market map",
+            "Coverage",
+            new ImageCropContext(1000, 0, 0, 0, 0.01d, 0d, 0d, 0d),
+            new ImageTransformContext(null, null, false, false),
+            new ImageContentInterpretationContext(
+                ImageContentInterpretationStatus.NotConfigured,
+                null,
+                null,
+                null),
+            ExtractionStatus.Succeeded);
+        var element = new SlideElementContext(
+            new ElementIdentity("10", "Market Map"),
+            ElementKind.Picture,
+            new SourceReference("sample.pptx", "/ppt/slides/slide1.xml", "rId1", 1, "10", "Market Map"),
+            0,
+            null,
+            null,
+            ExtractionStatus.Succeeded,
+            [],
+            Image: image);
+        var document = new DeckContextDocument(
+            DeckContextDocument.CurrentSchemaVersion,
+            new DeckMetadata("sample.pptx", "/ppt/presentation.xml", 100, 50, 1),
+            [
+                new SlideContext(
+                    new SlideMetadata(1, "256", "rId1", "/ppt/slides/slide1.xml", 100, 50),
+                    [element],
+                    ExtractionStatus.Succeeded,
+                    []),
+            ],
+            ExtractionStatus.Succeeded,
+            []);
+
+        var jsonText = new DeckContextJsonSerializer().Serialize(document);
+
+        using var json = JsonDocument.Parse(jsonText);
+        var serializedImage = json.RootElement
+            .GetProperty("slides")[0]
+            .GetProperty("elements")[0]
+            .GetProperty("image");
+        Assert.Equal("/ppt/media/image1.png", serializedImage.GetProperty("partUri").GetString());
+        Assert.Equal("market map", serializedImage.GetProperty("alternativeText").GetString()?.ToLowerInvariant());
+        Assert.Equal("notConfigured", serializedImage
+            .GetProperty("interpretation")
+            .GetProperty("status")
+            .GetString());
+        Assert.False(serializedImage.GetProperty("interpretation").TryGetProperty("text", out _));
+    }
 }

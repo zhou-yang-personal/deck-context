@@ -36,9 +36,28 @@ try
             Path.Combine(workbookDirectory, SanitizeFileName(workbook.SuggestedFileName)));
     }
 
+    var imageDirectory = Path.Combine(outputDirectory, "images");
+    var images = document.Slides
+        .SelectMany(slide => slide.Elements)
+        .Select(element => element.Image)
+        .Where(image => image is { PartUri: not null, Sha256: not null, SuggestedFileName: not null })
+        .Cast<DeckContext.Domain.Model.ImageContext>()
+        .DistinctBy(image => image.PartUri, StringComparer.Ordinal)
+        .ToArray();
+    var imageExporter = new OpenXmlImageAssetExporter();
+
+    foreach (var image in images)
+    {
+        imageExporter.Export(
+            sourcePath,
+            image,
+            Path.Combine(imageDirectory, SanitizeFileName(image.SuggestedFileName!)));
+    }
+
     Console.WriteLine($"Status: {document.Status}");
     Console.WriteLine($"Slides: {document.Slides.Count}");
     Console.WriteLine($"Embedded workbooks exported: {workbooks.Length}");
+    Console.WriteLine($"Images exported: {images.Length}");
     Console.WriteLine($"Context: {contextPath}");
     return document.Status == DeckContext.Domain.Extraction.ExtractionStatus.Failed ? 1 : 0;
 }

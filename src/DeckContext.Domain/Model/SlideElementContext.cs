@@ -31,4 +31,5 @@ public sealed record SlideElementContext(
     string? ParentGroupId = null,
     TextContentContext? Text = null,
     TableContext? Table = null,
-    ChartContext? Chart = null);
+    ChartContext? Chart = null,
+    ImageContext? Image = null);

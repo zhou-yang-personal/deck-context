@@ -65,7 +65,7 @@ For the Phase 5 chart/workbook verification package, run:
 .\DeckContext.Verification\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
 ```
 
-The command writes `deck.context.json` and exports traceable embedded workbooks under `workbooks\`. It is a development verification surface; the end-user conversion workflow remains scheduled for Phase 8.
+The command writes `deck.context.json`, exports traceable embedded workbooks under `workbooks\`, and exports internal image media under `images\`. Exported binary assets are checked against the SHA-256 stored in the context. It is a development verification surface; the end-user conversion workflow remains scheduled for Phase 8.
 
 ## Branch Strategy
 
@@ -76,4 +76,4 @@ Unless explicitly requested otherwise, future implementation work should target 
 
 ## Status
 
-Phases 0–4 are complete on `dev`. Phase 5 implementation follows chart formulas and package relationships into embedded Excel workbooks, maps referenced worksheets/ranges/cells, preserves formula/raw/resolved values, validates chart caches, and exports the exact workbook asset. Phase 5 remains pending Gate A acceptance against the supplied real-world deck. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
+Phases 0–4 are complete on `dev`; Phase 5 implementation is complete and remains pending Gate A acceptance against the supplied real-world deck. Phase 6 identifies image objects, preserves media relationships, native alternative text, crop/transform data and hashes, exports exact image assets, and explicitly reports `NotConfigured` when no OCR/Vision provider is selected. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
