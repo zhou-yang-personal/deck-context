@@ -42,7 +42,7 @@ public sealed class OpenXmlDeckContextReaderTests
             normalizedGeometry.X,
             precision: 8);
 
-        var text = Assert.NotNull(firstElement.Text);
+        var text = Assert.IsType<TextContentContext>(firstElement.Text);
         var paragraph = Assert.Single(text.Paragraphs);
         Assert.Equal(0, paragraph.Level);
         Assert.Equal("l", paragraph.Alignment);
