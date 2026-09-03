@@ -354,7 +354,7 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
                 "b" when rawValue == "0" => "false",
                 _ => rawValue,
             };
-            var styleIndex = uint.TryParse(
+            uint? styleIndex = uint.TryParse(
                 cell.Attribute("s")?.Value,
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
@@ -620,7 +620,7 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
 
     private static string ResolvePartPath(string ownerPartPath, string target)
     {
-        if (target.StartsWith('/', StringComparison.Ordinal))
+        if (target.StartsWith("/", StringComparison.Ordinal))
         {
             return target.TrimStart('/');
         }
