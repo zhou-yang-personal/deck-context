@@ -22,6 +22,8 @@ public sealed class RepositoryArchitectureTests
             "DeckContext.OpenXml.Tests",
             "DeckContext.Export.Tests",
             "DeckContext.Verification",
+            "DeckContext.Pipeline",
+            "DeckContext.App.Tests",
         };
 
         foreach (var project in expectedProjects)
@@ -47,9 +49,13 @@ public sealed class RepositoryArchitectureTests
             "src/DeckContext.Domain/DeckContext.Domain.csproj");
         AssertProjectReferences(
             "src/DeckContext.App/DeckContext.App.csproj",
-            "src/DeckContext.Application/DeckContext.Application.csproj");
+            "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj");
         AssertProjectReferences(
             "tools/DeckContext.Verification/DeckContext.Verification.csproj",
+            "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj");
+        AssertProjectReferences(
+            "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj",
+            "src/DeckContext.Domain/DeckContext.Domain.csproj",
             "src/DeckContext.Export/DeckContext.Export.csproj",
             "src/DeckContext.OpenXml/DeckContext.OpenXml.csproj");
     }

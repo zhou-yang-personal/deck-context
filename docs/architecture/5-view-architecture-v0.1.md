@@ -123,12 +123,13 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    UI[Presentation Layer<br/>WPF] --> APP[Application Layer<br/>Extraction Orchestration]
-    APP --> DOMAIN[Domain / Normalized IR]
-    APP --> INFRA[Infrastructure Extractors]
+    UI[Presentation Layer<br/>WPF] --> PIPELINE[Pipeline<br/>Extraction Orchestration]
+    PIPELINE --> APP[Application Contracts]
+    PIPELINE --> DOMAIN[Domain / Normalized IR]
+    PIPELINE --> INFRA[Infrastructure Extractors]
     INFRA --> OOXML[PPTX / OOXML]
     INFRA --> OPTIONAL[Optional Adapters<br/>Office / OCR / Vision]
-    APP --> EXPORT[Exporters<br/>Markdown / JSON / Report]
+    PIPELINE --> EXPORT[Exporters<br/>Markdown / JSON / Report]
     EXPORT --> DOMAIN
 ```
 
@@ -136,9 +137,9 @@ flowchart TB
 
 ## 2.2 主要逻辑组件
 
-### 2.2.1 `DeckContext.Application`
+### 2.2.1 `DeckContext.Application` and `DeckContext.Pipeline`
 
-职责：
+`DeckContext.Application` owns implementation-neutral contracts for deck readers, asset exporters, and optional image-text providers. `DeckContext.Pipeline` is the concrete local composition/orchestration layer and is responsible for:
 
 - 创建 extraction job；
 - 驱动解析生命周期；
@@ -148,7 +149,7 @@ flowchart TB
 - 调用 Exporter；
 - 向 UI 提供进度和结果。
 
-不负责解析具体 XML 节点。
+Neither project parses concrete XML nodes; `DeckContext.Pipeline` composes the `OpenXml` and `Export` implementations behind this boundary.
 
 ### 2.2.2 `DeckContext.Domain`
 
@@ -335,8 +336,10 @@ deck-context/
 │  ├─ DeckContext.Domain/
 │  ├─ DeckContext.OpenXml/
 │  ├─ DeckContext.Export/
+│  ├─ DeckContext.Pipeline/
 │  └─ DeckContext.Adapters/        # when an optional adapter is actually implemented
 └─ tests/
+   ├─ DeckContext.App.Tests/
    ├─ DeckContext.OpenXml.Tests/
    ├─ DeckContext.Export.Tests/
    └─ Fixtures/
@@ -350,11 +353,16 @@ deck-context/
 
 ```text
 DeckContext.App
-    -> DeckContext.Application
+    -> DeckContext.Pipeline
 
 DeckContext.Application
     -> DeckContext.Domain
     -> extractor/export interfaces
+
+DeckContext.Pipeline
+    -> DeckContext.Domain
+    -> DeckContext.OpenXml
+    -> DeckContext.Export
 
 DeckContext.OpenXml
     -> DeckContext.Domain

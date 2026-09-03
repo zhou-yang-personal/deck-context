@@ -2,38 +2,133 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="DeckContext"
-        Width="760"
-        Height="460"
-        MinWidth="640"
-        MinHeight="380"
-        WindowStartupLocation="CenterScreen">
-  <Grid Background="#F7F8FA">
-    <Border Width="520"
-            Padding="40"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            Background="White"
-            BorderBrush="#D9DEE7"
-            BorderThickness="1"
-            CornerRadius="8">
+        Width="920"
+        Height="680"
+        MinWidth="760"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        AllowDrop="True"
+        DragOver="Window_DragOver"
+        Drop="Window_Drop">
+  <Window.Resources>
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="18,9" />
+      <Setter Property="FontFamily" Value="Segoe UI" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="FontFamily" Value="Segoe UI" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+  </Window.Resources>
+
+  <Grid Background="#F4F6F9">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Padding="32,24" Background="#172033">
       <StackPanel>
-        <TextBlock FontFamily="Arial"
+        <TextBlock FontFamily="Segoe UI"
                    FontSize="30"
                    FontWeight="SemiBold"
-                   Foreground="#1B1F24"
+                   Foreground="White"
                    Text="DeckContext" />
-        <TextBlock Margin="0,14,0,0"
-                   FontFamily="Arial"
-                   FontSize="16"
-                   Foreground="#4B5563"
-                   Text="Engineering bootstrap is ready." />
-        <TextBlock Margin="0,12,0,0"
-                   FontFamily="Arial"
-                   FontSize="13"
-                   Foreground="#6B7280"
-                   TextWrapping="Wrap"
-                   Text="PPTX extraction will be implemented incrementally after the normalized IR and package foundation are established." />
+        <TextBlock Margin="0,6,0,0"
+                   FontFamily="Segoe UI"
+                   FontSize="14"
+                   Foreground="#C8D2E5"
+                   Text="Convert PowerPoint into structured, traceable, LLM-friendly context." />
       </StackPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="32,24">
+        <TextBlock FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Foreground="#334155" Text="SOURCE POWERPOINT" />
+        <Grid Margin="0,8,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox Grid.Column="0"
+                   IsReadOnly="True"
+                   Text="{Binding InputPath, Mode=OneWay}"
+                   ToolTip="Drop a .pptx anywhere in this window" />
+          <Button Grid.Column="1" Margin="10,0,0,0" Click="SelectPowerPoint_Click" Content="Browse…" />
+        </Grid>
+
+        <TextBlock Margin="0,22,0,0" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Foreground="#334155" Text="OUTPUT FOLDER" />
+        <Grid Margin="0,8,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox Grid.Column="0" IsReadOnly="True" Text="{Binding OutputDirectory, Mode=OneWay}" />
+          <Button Grid.Column="1" Margin="10,0,0,0" Click="SelectOutput_Click" Content="Choose…" />
+        </Grid>
+
+        <Border Margin="0,24,0,0" Padding="18" Background="White" BorderBrush="#D8DEE9" BorderThickness="1" CornerRadius="6">
+          <StackPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0"
+                         FontFamily="Segoe UI"
+                         FontSize="14"
+                         Foreground="#334155"
+                         Text="{Binding StatusMessage}"
+                         TextWrapping="Wrap" />
+              <TextBlock Grid.Column="1"
+                         Margin="16,0,0,0"
+                         FontFamily="Segoe UI"
+                         FontSize="14"
+                         FontWeight="SemiBold"
+                         Foreground="#2563EB"
+                         Text="{Binding ProgressPercentage, StringFormat={}{0}%}" />
+            </Grid>
+            <ProgressBar Margin="0,12,0,0"
+                         Height="8"
+                         Maximum="100"
+                         Value="{Binding ProgressPercentage}" />
+          </StackPanel>
+        </Border>
+
+        <TextBlock Margin="0,24,0,8" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Foreground="#334155" Text="DIAGNOSTICS" />
+        <ListView MinHeight="160" ItemsSource="{Binding Diagnostics}" BorderBrush="#D8DEE9">
+          <ListView.View>
+            <GridView>
+              <GridViewColumn Header="Severity" Width="80" DisplayMemberBinding="{Binding Severity}" />
+              <GridViewColumn Header="Code" Width="125" DisplayMemberBinding="{Binding Code}" />
+              <GridViewColumn Header="Message" Width="390" DisplayMemberBinding="{Binding Message}" />
+              <GridViewColumn Header="Location" Width="180" DisplayMemberBinding="{Binding Location}" />
+            </GridView>
+          </ListView.View>
+        </ListView>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Padding="32,18" Background="White" BorderBrush="#D8DEE9" BorderThickness="0,1,0,0">
+      <DockPanel LastChildFill="False">
+        <Button DockPanel.Dock="Left"
+                IsEnabled="{Binding CanOpenOutput}"
+                Click="OpenOutput_Click"
+                Content="Open output folder" />
+        <Button DockPanel.Dock="Right"
+                MinWidth="150"
+                Background="#2563EB"
+                Foreground="White"
+                IsDefault="True"
+                IsEnabled="{Binding CanConvert}"
+                Click="Convert_Click"
+                Content="Extract context" />
+      </DockPanel>
     </Border>
   </Grid>
 </Window>

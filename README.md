@@ -57,15 +57,32 @@ dotnet build DeckContext.sln --configuration Release --no-restore
 dotnet test DeckContext.sln --configuration Release --no-build
 ```
 
-Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF shell and verification command as self-contained `win-x64` packages, and upload a commit-traceable GitHub Actions artifact.
+Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF application and verification command as self-contained `win-x64` packages, and upload a commit-traceable GitHub Actions artifact.
 
-For the Phase 5 chart/workbook verification package, run:
+## Use the Windows application
+
+Download and unzip the latest `DeckContext-dev-win-x64-{short-sha}` artifact, then run:
+
+```powershell
+.\DeckContext\DeckContext.exe
+```
+
+Select or drop a `.pptx`, optionally choose an output folder, then select **Extract context**. The generated package contains:
+
+- `deck.context.md` — readable deck/slide/object context for humans and LLMs;
+- `deck.context.json` — the complete normalized intermediate representation;
+- `extraction-report.json` — explicit information, warning, error, skipped, partial, and recovered diagnostics;
+- `manifest.json` — hashes, sizes, provenance, and relative paths for generated and extracted assets;
+- `workbooks\` — exact embedded workbook assets when present;
+- `images\` — exact internal image media when present.
+
+The same pipeline is available as a command for repeatable verification or automation:
 
 ```powershell
 .\DeckContext.Verification\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
 ```
 
-The command writes `deck.context.json`, exports traceable embedded workbooks under `workbooks\`, and exports internal image media under `images\`. Exported binary assets are checked against the SHA-256 stored in the context. It is a development verification surface; the end-user conversion workflow remains scheduled for Phase 8.
+Both entry points read the PPTX once into the same IR, then project Markdown, JSON, diagnostics, manifest, and assets from that result. Images are preserved and identified, but pixel semantics are explicitly reported as not analyzed until an OCR/Vision provider is configured.
 
 ## Branch Strategy
 
@@ -76,4 +93,4 @@ Unless explicitly requested otherwise, future implementation work should target 
 
 ## Status
 
-Phases 0–4 are complete on `dev`; Phase 5 implementation is complete and remains pending Gate A acceptance against the supplied real-world deck. Phase 6 identifies image objects, preserves media relationships, native alternative text, crop/transform data and hashes, exports exact image assets, and explicitly reports `NotConfigured` when no OCR/Vision provider is selected. The current WPF shell intentionally exposes no extraction workflow before Phase 8.
+V1 Phases 0–9 are implemented on `dev`. Automated fixture, determinism, partial-degradation, architecture, exporter, pipeline, and view-model evidence runs in Windows CI. Final acceptance remains intentionally open until the packaged application and a representative real deck pass the consolidated Gate A/B/C manual checklist in [`docs/development/v1-acceptance.md`](docs/development/v1-acceptance.md).

@@ -20,6 +20,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeckContext.Export.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeckContext.Verification", "tools\DeckContext.Verification\DeckContext.Verification.csproj", "{72084299-1FA9-48C4-902B-C25D26C60153}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeckContext.Pipeline", "src\DeckContext.Pipeline\DeckContext.Pipeline.csproj", "{10F993C1-9E18-48E4-99FA-EF590B70CB58}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeckContext.App.Tests", "tests\DeckContext.App.Tests\DeckContext.App.Tests.csproj", "{5F4A62E8-3B17-4A73-87FC-8DCC0E74A4D9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -62,5 +66,13 @@ Global
 		{72084299-1FA9-48C4-902B-C25D26C60153}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{72084299-1FA9-48C4-902B-C25D26C60153}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{72084299-1FA9-48C4-902B-C25D26C60153}.Release|Any CPU.Build.0 = Release|Any CPU
+		{10F993C1-9E18-48E4-99FA-EF590B70CB58}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{10F993C1-9E18-48E4-99FA-EF590B70CB58}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{10F993C1-9E18-48E4-99FA-EF590B70CB58}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{10F993C1-9E18-48E4-99FA-EF590B70CB58}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F4A62E8-3B17-4A73-87FC-8DCC0E74A4D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F4A62E8-3B17-4A73-87FC-8DCC0E74A4D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F4A62E8-3B17-4A73-87FC-8DCC0E74A4D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F4A62E8-3B17-4A73-87FC-8DCC0E74A4D9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

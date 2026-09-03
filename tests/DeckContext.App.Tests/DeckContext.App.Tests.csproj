@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <OutputType>Exe</OutputType>
@@ -16,8 +17,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\DeckContext.App\DeckContext.App.csproj" />
     <ProjectReference Include="..\..\src\DeckContext.Domain\DeckContext.Domain.csproj" />
-    <ProjectReference Include="..\..\src\DeckContext.OpenXml\DeckContext.OpenXml.csproj" />
     <ProjectReference Include="..\..\src\DeckContext.Pipeline\DeckContext.Pipeline.csproj" />
   </ItemGroup>
 </Project>

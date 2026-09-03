@@ -8,6 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DeckContext.Application\DeckContext.Application.csproj" />
+    <ProjectReference Include="..\DeckContext.Pipeline\DeckContext.Pipeline.csproj" />
   </ItemGroup>
 </Project>

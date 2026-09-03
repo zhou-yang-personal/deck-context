@@ -5,7 +5,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DeckContext.Export\DeckContext.Export.csproj" />
-    <ProjectReference Include="..\..\src\DeckContext.OpenXml\DeckContext.OpenXml.csproj" />
+    <ProjectReference Include="..\..\src\DeckContext.Pipeline\DeckContext.Pipeline.csproj" />
   </ItemGroup>
 </Project>

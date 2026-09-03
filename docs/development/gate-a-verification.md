@@ -14,9 +14,12 @@ Phase 5 requires a real Windows review because production PPTX files contain cha
   "C:\path\deck-context-output"
 ```
 
-The command produces:
+The command produces the complete V1 context package:
 
+- `deck.context.md` — human/LLM-readable deck, slide, object, chart, and workbook representation;
 - `deck.context.json` — normalized deck, chart, workbook, worksheet, range, cell, status, and diagnostic data;
+- `extraction-report.json` — flattened diagnostic evidence;
+- `manifest.json` — asset provenance, paths, sizes, and hashes;
 - `workbooks\*.xlsx` — exact embedded workbook bytes verified against the SHA-256 stored in JSON.
 
 ## Review checklist
@@ -30,4 +33,4 @@ The command produces:
 - Any cache/cell disagreement appears as `DCX-WORKBOOK-CACHE-MISMATCH`; no value is silently repaired or invented.
 - A workbook-specific failure marks only its chart/deck path partial and leaves native chart cache evidence available.
 
-Markdown representation is scheduled for Phase 7. Gate A at Phase 5 validates the structured JSON and exact workbook assets; qualitative Markdown review will be completed when that exporter exists.
+Markdown representation is now included. Complete this review together with Gate B and Gate C using `v1-acceptance.md` so a single real-deck run validates the data chain, desktop workflow, and LLM usefulness.
