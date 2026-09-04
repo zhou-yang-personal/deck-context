@@ -169,7 +169,7 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
 
     private static string Hash(byte[] bytes)
     {
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return System.Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 
     private static string SafeFileName(string fileName)
