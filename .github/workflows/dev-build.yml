@@ -41,7 +41,18 @@ jobs:
       - name: Test
         run: dotnet test DeckContext.sln --configuration Release --no-build
 
-      - name: Publish Windows x64 self-contained package
+      # Publish the console tool first, then the WPF app into the same directory.
+      # The WindowsDesktop publish supplies the superset when framework files overlap.
+      - name: Publish verification command into shared package
+        run: >-
+          dotnet publish tools/DeckContext.Verification/DeckContext.Verification.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output artifacts/publish/DeckContext
+
+      - name: Publish Windows x64 app into shared package
         run: >-
           dotnet publish src/DeckContext.App/DeckContext.App.csproj
           --configuration Release
@@ -50,14 +61,40 @@ jobs:
           --no-restore
           --output artifacts/publish/DeckContext
 
-      - name: Publish verification command
-        run: >-
-          dotnet publish tools/DeckContext.Verification/DeckContext.Verification.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained true
-          --no-restore
-          --output artifacts/publish/DeckContext.Verification
+      - name: Verify shared package layout and console startup
+        shell: pwsh
+        run: |
+          $packageDirectory = "artifacts/publish/DeckContext"
+          $requiredFiles = @(
+            "DeckContext.exe",
+            "DeckContext.Verification.exe",
+            "DeckContext.runtimeconfig.json",
+            "DeckContext.Verification.runtimeconfig.json"
+          )
+
+          foreach ($fileName in $requiredFiles) {
+            $path = Join-Path $packageDirectory $fileName
+            if (-not (Test-Path $path -PathType Leaf)) {
+              throw "Merged package is missing '$fileName'."
+            }
+          }
+
+          $coreClrFiles = @(Get-ChildItem artifacts/publish -Recurse -File -Filter coreclr.dll)
+          if ($coreClrFiles.Count -ne 1) {
+            throw "Expected one shared .NET runtime, found $($coreClrFiles.Count)."
+          }
+
+          $PSNativeCommandUseErrorActionPreference = $false
+          & (Join-Path $packageDirectory "DeckContext.Verification.exe")
+          $verificationExitCode = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          if ($verificationExitCode -ne 2) {
+            throw "Verification command startup check returned exit code $verificationExitCode instead of 2."
+          }
+
+          $packageBytes = (Get-ChildItem $packageDirectory -Recurse -File |
+            Measure-Object -Property Length -Sum).Sum
+          Write-Host "Shared package size: $packageBytes bytes"
 
       - name: Resolve artifact identity
         id: artifact

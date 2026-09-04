@@ -59,7 +59,7 @@ dotnet build DeckContext.sln --configuration Release --no-restore
 dotnet test DeckContext.sln --configuration Release --no-build
 ```
 
-Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF application and verification command as self-contained `win-x64` packages, and upload a commit-traceable GitHub Actions artifact.
+Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF application and verification command as one self-contained `win-x64` package with a shared .NET runtime, and upload a commit-traceable GitHub Actions artifact.
 
 ## Use the Windows application
 
@@ -83,7 +83,7 @@ DeckContext publishes the package through a sibling staging directory and replac
 The same pipeline is available as a command for repeatable verification or automation:
 
 ```powershell
-.\DeckContext.Verification\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
+.\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
 ```
 
 Both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project Markdown, JSON, diagnostics, manifest, and assets from that result. Images are preserved and identified, but pixel semantics are explicitly reported as not analyzed until an OCR/Vision provider is configured.

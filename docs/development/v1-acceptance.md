@@ -24,7 +24,7 @@ This checklist intentionally combines the three manual gates. One representative
 | 12. Degrade one object without losing the deck | Malformed workbook and missing relationship tests assert partial object/deck status while retaining usable cached/native data. |
 | 13. Produce genuinely readable LLM input | Markdown structure tests cover deck summary, slides, source-ordered objects, text, tables, charts, workbook cells, images, and diagnostics; final qualitative confirmation is manual. |
 
-The Windows workflow restores, builds, tests, and publishes both the WPF application and verification command. The complete-package tests also re-run a fixture twice and compare Markdown, JSON, report, and manifest byte-for-byte, verify every manifest asset's size and SHA-256, replace an intact prior package without stale assets, and refuse to overwrite unrelated files.
+The Windows workflow restores, builds, tests, and publishes the WPF application and verification command into one self-contained directory with a shared .NET runtime. CI checks that both entry points and their runtime configuration files exist, only one CoreCLR is packaged, and the verification command starts. The complete-package tests also re-run a fixture twice and compare Markdown, JSON, report, and manifest byte-for-byte, verify every manifest asset's size and SHA-256, replace an intact prior package without stale assets, and refuse to overwrite unrelated files.
 
 The conversion session opens the PPTX once, captures immutable workbook/image asset snapshots alongside the IR, writes the full package to a sibling staging directory, and publishes it only after the manifest is complete. A failed or cancelled conversion therefore does not mix partial new output with an existing accepted package.
 
