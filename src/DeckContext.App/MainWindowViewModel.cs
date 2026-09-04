@@ -126,16 +126,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         HasCompleted = false;
         ProgressPercentage = 0;
         Diagnostics.Clear();
+        var acceptsProgress = 1;
 
         try
         {
             var progress = new Progress<ConversionProgress>(update =>
             {
+                if (Volatile.Read(ref acceptsProgress) == 0)
+                {
+                    return;
+                }
+
                 ProgressPercentage = update.Percentage;
                 StatusMessage = update.Message;
             });
 
             var result = await conversionService.ConvertAsync(InputPath, OutputDirectory, progress, cancellationToken);
+            Interlocked.Exchange(ref acceptsProgress, 0);
             ProgressPercentage = 100;
             HasCompleted = true;
             StatusMessage = result.Document.Status switch
@@ -167,6 +174,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         finally
         {
+            Interlocked.Exchange(ref acceptsProgress, 0);
             IsBusy = false;
         }
     }
