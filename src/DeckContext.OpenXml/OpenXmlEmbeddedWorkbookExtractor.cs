@@ -12,7 +12,8 @@ namespace DeckContext.OpenXml;
 
 internal sealed record EmbeddedWorkbookExtractionResult(
     ChartContext Chart,
-    ExtractionStatus Status);
+    ExtractionStatus Status,
+    OpenXmlExtractedAsset? Asset = null);
 
 internal static partial class OpenXmlEmbeddedWorkbookExtractor
 {
@@ -38,6 +39,11 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
         }
 
         var relationshipId = chart.ExternalDataRelationshipId!;
+        source = source with
+        {
+            PartUri = chartPart.Uri.OriginalString,
+            RelationshipId = relationshipId,
+        };
         var workbookDiagnostics = new List<ExtractionDiagnostic>();
 
         try
@@ -135,7 +141,8 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
                     workbookDiagnostics.ToArray());
                 return new EmbeddedWorkbookExtractionResult(
                     chart with { EmbeddedWorkbook = failedWorkbook },
-                    ExtractionStatus.Partial);
+                    ExtractionStatus.Partial,
+                    CreateAsset(workbookPart.Uri.OriginalString, failedWorkbook, bytes));
             }
 
             var workbookStatus = workbookDiagnostics.Count == 0
@@ -172,7 +179,8 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
 
             return new EmbeddedWorkbookExtractionResult(
                 boundChart,
-                workbookDiagnostics.Count == 0 ? ExtractionStatus.Succeeded : ExtractionStatus.Partial);
+                workbookDiagnostics.Count == 0 ? ExtractionStatus.Succeeded : ExtractionStatus.Partial,
+                CreateAsset(workbookPart.Uri.OriginalString, workbook, bytes));
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException or System.Xml.XmlException)
         {
@@ -405,6 +413,7 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
             AddFormula(formulas, series.NameFormula);
             AddFormula(formulas, series.Categories?.Formula);
             AddFormula(formulas, series.Values?.Formula);
+            AddFormula(formulas, series.BubbleSizes?.Formula);
         }
 
         return formulas;
@@ -425,6 +434,7 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
                             NameWorkbookRangeId = FindRangeId(series.NameFormula, rangeIdsByFormula),
                             Categories = BindDataSource(series.Categories, rangeIdsByFormula),
                             Values = BindDataSource(series.Values, rangeIdsByFormula),
+                            BubbleSizes = BindDataSource(series.BubbleSizes, rangeIdsByFormula),
                         })
                         .ToArray(),
                 })
@@ -471,6 +481,13 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
             ValidateDataSource(
                 series.Values,
                 $"series {series.Index} values",
+                ranges,
+                source,
+                workbookDiagnostics,
+                elementDiagnostics);
+            ValidateDataSource(
+                series.BubbleSizes,
+                $"series {series.Index} bubble sizes",
                 ranges,
                 source,
                 workbookDiagnostics,
@@ -634,6 +651,19 @@ internal static partial class OpenXmlEmbeddedWorkbookExtractor
     {
         var chartName = Path.GetFileNameWithoutExtension(chartPartUri);
         return $"{chartName}-workbook.xlsx";
+    }
+
+    private static OpenXmlExtractedAsset CreateAsset(
+        string partUri,
+        EmbeddedWorkbookContext workbook,
+        byte[] bytes)
+    {
+        return new OpenXmlExtractedAsset(
+            OpenXmlExtractedAssetKind.EmbeddedWorkbook,
+            partUri,
+            workbook.Sha256,
+            bytes.LongLength,
+            bytes);
     }
 
     private static string? FindRangeId(

@@ -11,7 +11,8 @@ namespace DeckContext.OpenXml;
 
 internal sealed record ImageExtractionResult(
     ImageContext Image,
-    ExtractionStatus Status);
+    ExtractionStatus Status,
+    OpenXmlExtractedAsset? Asset = null);
 
 internal static class OpenXmlImageExtractor
 {
@@ -71,6 +72,8 @@ internal static class OpenXmlImageExtractor
                 ExtractionStatus.Failed);
             return new ImageExtractionResult(missingImage, ExtractionStatus.Failed);
         }
+
+        source = source with { RelationshipId = relationshipId };
 
         var externalRelationship = slidePart.ExternalRelationships
             .FirstOrDefault(relationship => relationship.Id == relationshipId);
@@ -153,7 +156,15 @@ internal static class OpenXmlImageExtractor
                 transform,
                 interpretation,
                 ExtractionStatus.Succeeded);
-            return new ImageExtractionResult(image, ExtractionStatus.Succeeded);
+            return new ImageExtractionResult(
+                image,
+                ExtractionStatus.Succeeded,
+                new OpenXmlExtractedAsset(
+                    OpenXmlExtractedAssetKind.Image,
+                    imagePart.Uri.OriginalString,
+                    image.Sha256!,
+                    bytes.LongLength,
+                    bytes));
         }
         catch (Exception exception) when (exception is KeyNotFoundException or ArgumentException or IOException)
         {

@@ -28,6 +28,7 @@ public sealed class DeckContextPackageExportTests
         Assert.Contains("Native alternative text: Market coverage map", first, StringComparison.Ordinal);
         Assert.Contains("Pixel content: not analyzed", first, StringComparison.Ordinal);
         Assert.Contains("DCX-ELEMENT-TYPE-UNSUPPORTED", first, StringComparison.Ordinal);
+        Assert.Contains("source: slide 1, object `5`", first, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -52,7 +53,7 @@ public sealed class DeckContextPackageExportTests
     public void Manifest_serialization_is_deterministic_and_traceable()
     {
         var manifest = new ContextPackageManifest(
-            "0.1",
+            DeckContext.Domain.Model.DeckContextDocument.CurrentSchemaVersion,
             "sample.pptx",
             [
                 new ContextPackageAsset(

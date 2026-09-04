@@ -32,7 +32,7 @@ public sealed class DeckContextJsonSerializerTests
 
         using var json = JsonDocument.Parse(first);
         var root = json.RootElement;
-        Assert.Equal("0.1", root.GetProperty("schemaVersion").GetString());
+        Assert.Equal("0.2", root.GetProperty("schemaVersion").GetString());
         Assert.Equal("sample.pptx", root.GetProperty("deck").GetProperty("sourceFileName").GetString());
         Assert.Equal("succeeded", root.GetProperty("status").GetString());
         Assert.Equal(1, root.GetProperty("slides").GetArrayLength());

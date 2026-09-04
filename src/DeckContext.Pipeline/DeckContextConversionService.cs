@@ -55,96 +55,121 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
     {
         cancellationToken.ThrowIfCancellationRequested();
         var fullSourcePath = Path.GetFullPath(sourcePath);
-        var fullOutputDirectory = Path.GetFullPath(outputDirectory);
-        Directory.CreateDirectory(fullOutputDirectory);
+        var fullOutputDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(outputDirectory));
 
         progress?.Report(new ConversionProgress(5, "Reading", "Reading PPTX package and relationships."));
-        var document = new OpenXmlDeckContextReader().Read(fullSourcePath, cancellationToken);
+        var readResult = new OpenXmlDeckContextReader().ReadPackage(fullSourcePath, cancellationToken);
+        var document = readResult.Document;
+        string? stagingDirectory = null;
 
-        progress?.Report(new ConversionProgress(30, "Serializing", "Writing Markdown and JSON context."));
-        var markdownPath = Path.Combine(fullOutputDirectory, "deck.context.md");
-        var contextJsonPath = Path.Combine(fullOutputDirectory, "deck.context.json");
-        var extractionReportPath = Path.Combine(fullOutputDirectory, "extraction-report.json");
-        var manifestPath = Path.Combine(fullOutputDirectory, "manifest.json");
-        WriteText(markdownPath, new DeckContextMarkdownExporter().Serialize(document));
-        WriteText(contextJsonPath, new DeckContextJsonSerializer().Serialize(document));
-        WriteText(extractionReportPath, new ExtractionReportSerializer().Serialize(document));
-
-        var assets = new List<ContextPackageAsset>
+        try
         {
-            CreateGeneratedAsset(ContextPackageAssetKind.ContextMarkdown, markdownPath, fullOutputDirectory),
-            CreateGeneratedAsset(ContextPackageAssetKind.ContextJson, contextJsonPath, fullOutputDirectory),
-            CreateGeneratedAsset(ContextPackageAssetKind.ExtractionReport, extractionReportPath, fullOutputDirectory),
-        };
+            stagingDirectory = ContextPackageDirectoryPublisher.CreateStagingDirectory(fullOutputDirectory);
+            progress?.Report(new ConversionProgress(30, "Serializing", "Writing Markdown and JSON context."));
+            var stagedMarkdownPath = Path.Combine(stagingDirectory, "deck.context.md");
+            var stagedContextJsonPath = Path.Combine(stagingDirectory, "deck.context.json");
+            var stagedExtractionReportPath = Path.Combine(stagingDirectory, "extraction-report.json");
+            var stagedManifestPath = Path.Combine(stagingDirectory, "manifest.json");
+            WriteText(stagedMarkdownPath, new DeckContextMarkdownExporter().Serialize(document));
+            WriteText(stagedContextJsonPath, new DeckContextJsonSerializer().Serialize(document));
+            WriteText(stagedExtractionReportPath, new ExtractionReportSerializer().Serialize(document));
 
-        progress?.Report(new ConversionProgress(60, "Assets", "Exporting embedded workbook assets."));
-        var workbookExporter = new OpenXmlEmbeddedWorkbookAssetExporter();
-        var workbooks = document.Slides
-            .SelectMany(slide => slide.Elements)
-            .Select(element => element.Chart?.EmbeddedWorkbook)
-            .Where(workbook => workbook is not null)
-            .Cast<EmbeddedWorkbookContext>()
-            .DistinctBy(workbook => workbook.PartUri, StringComparer.Ordinal)
-            .OrderBy(workbook => workbook.PartUri, StringComparer.Ordinal)
-            .ToArray();
+            var assets = new List<ContextPackageAsset>
+            {
+                CreateGeneratedAsset(ContextPackageAssetKind.ContextMarkdown, stagedMarkdownPath, stagingDirectory),
+                CreateGeneratedAsset(ContextPackageAssetKind.ContextJson, stagedContextJsonPath, stagingDirectory),
+                CreateGeneratedAsset(ContextPackageAssetKind.ExtractionReport, stagedExtractionReportPath, stagingDirectory),
+            };
+            var extractedAssets = readResult.Assets.ToDictionary(
+                asset => $"{asset.Kind}:{asset.PartUri}",
+                StringComparer.Ordinal);
 
-        foreach (var workbook in workbooks)
-        {
+            progress?.Report(new ConversionProgress(60, "Assets", "Exporting embedded workbook assets."));
+            var workbooks = document.Slides
+                .SelectMany(slide => slide.Elements)
+                .Select(element => element.Chart?.EmbeddedWorkbook)
+                .Where(workbook => workbook is not null)
+                .Cast<EmbeddedWorkbookContext>()
+                .DistinctBy(workbook => workbook.PartUri, StringComparer.Ordinal)
+                .OrderBy(workbook => workbook.PartUri, StringComparer.Ordinal)
+                .ToArray();
+
+            foreach (var workbook in workbooks)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var relativePath = Path.Combine("workbooks", SafeFileName(Path.GetFileName(workbook.PartUri)));
+                var destinationPath = Path.Combine(stagingDirectory, relativePath);
+                var snapshot = GetExtractedAsset(
+                    extractedAssets,
+                    OpenXmlExtractedAssetKind.EmbeddedWorkbook,
+                    workbook.PartUri,
+                    workbook.Sha256,
+                    workbook.SizeBytes);
+                WriteExtractedAsset(destinationPath, snapshot);
+                assets.Add(new ContextPackageAsset(
+                    ContextPackageAssetKind.EmbeddedWorkbook,
+                    NormalizePath(relativePath),
+                    workbook.PartUri,
+                    workbook.RelationshipId,
+                    workbook.Sha256,
+                    workbook.SizeBytes));
+            }
+
+            progress?.Report(new ConversionProgress(78, "Assets", "Exporting image media assets."));
+            var images = document.Slides
+                .SelectMany(slide => slide.Elements)
+                .Select(element => element.Image)
+                .Where(image => image is { PartUri: not null, Sha256: not null, SuggestedFileName: not null })
+                .Cast<ImageContext>()
+                .DistinctBy(image => image.PartUri, StringComparer.Ordinal)
+                .OrderBy(image => image.PartUri, StringComparer.Ordinal)
+                .ToArray();
+
+            foreach (var image in images)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var relativePath = Path.Combine("images", SafeFileName(image.SuggestedFileName!));
+                var destinationPath = Path.Combine(stagingDirectory, relativePath);
+                var snapshot = GetExtractedAsset(
+                    extractedAssets,
+                    OpenXmlExtractedAssetKind.Image,
+                    image.PartUri!,
+                    image.Sha256!,
+                    image.SizeBytes!.Value);
+                WriteExtractedAsset(destinationPath, snapshot);
+                assets.Add(new ContextPackageAsset(
+                    ContextPackageAssetKind.Image,
+                    NormalizePath(relativePath),
+                    image.PartUri,
+                    image.RelationshipId,
+                    image.Sha256!,
+                    image.SizeBytes!.Value));
+            }
+
+            progress?.Report(new ConversionProgress(92, "Manifest", "Writing the traceable asset manifest."));
+            var manifest = new ContextPackageManifest(
+                document.SchemaVersion,
+                document.Deck.SourceFileName,
+                assets);
+            WriteText(stagedManifestPath, new ContextPackageManifestSerializer().Serialize(manifest));
             cancellationToken.ThrowIfCancellationRequested();
-            var relativePath = Path.Combine("workbooks", SafeFileName(Path.GetFileName(workbook.PartUri)));
-            var destinationPath = Path.Combine(fullOutputDirectory, relativePath);
-            workbookExporter.Export(fullSourcePath, workbook, destinationPath, cancellationToken);
-            assets.Add(new ContextPackageAsset(
-                ContextPackageAssetKind.EmbeddedWorkbook,
-                NormalizePath(relativePath),
-                workbook.PartUri,
-                workbook.RelationshipId,
-                workbook.Sha256,
-                workbook.SizeBytes));
+            ContextPackageDirectoryPublisher.Publish(stagingDirectory, fullOutputDirectory);
+            stagingDirectory = null;
+            progress?.Report(new ConversionProgress(100, "Complete", "Context package created."));
+
+            return new ContextPackageResult(
+                document,
+                fullOutputDirectory,
+                Path.Combine(fullOutputDirectory, "deck.context.md"),
+                Path.Combine(fullOutputDirectory, "deck.context.json"),
+                Path.Combine(fullOutputDirectory, "extraction-report.json"),
+                Path.Combine(fullOutputDirectory, "manifest.json"),
+                assets);
         }
-
-        progress?.Report(new ConversionProgress(78, "Assets", "Exporting image media assets."));
-        var imageExporter = new OpenXmlImageAssetExporter();
-        var images = document.Slides
-            .SelectMany(slide => slide.Elements)
-            .Select(element => element.Image)
-            .Where(image => image is { PartUri: not null, Sha256: not null, SuggestedFileName: not null })
-            .Cast<ImageContext>()
-            .DistinctBy(image => image.PartUri, StringComparer.Ordinal)
-            .OrderBy(image => image.PartUri, StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var image in images)
+        finally
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var relativePath = Path.Combine("images", SafeFileName(image.SuggestedFileName!));
-            var destinationPath = Path.Combine(fullOutputDirectory, relativePath);
-            imageExporter.Export(fullSourcePath, image, destinationPath, cancellationToken);
-            assets.Add(new ContextPackageAsset(
-                ContextPackageAssetKind.Image,
-                NormalizePath(relativePath),
-                image.PartUri,
-                image.RelationshipId,
-                image.Sha256!,
-                image.SizeBytes!.Value));
+            ContextPackageDirectoryPublisher.DeleteStagingDirectory(stagingDirectory);
         }
-
-        progress?.Report(new ConversionProgress(92, "Manifest", "Writing the traceable asset manifest."));
-        var manifest = new ContextPackageManifest(
-            document.SchemaVersion,
-            document.Deck.SourceFileName,
-            assets);
-        WriteText(manifestPath, new ContextPackageManifestSerializer().Serialize(manifest));
-        progress?.Report(new ConversionProgress(100, "Complete", "Context package created."));
-
-        return new ContextPackageResult(
-            document,
-            fullOutputDirectory,
-            markdownPath,
-            contextJsonPath,
-            extractionReportPath,
-            manifestPath,
-            assets);
     }
 
     private static ContextPackageAsset CreateGeneratedAsset(
@@ -165,6 +190,37 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
     private static void WriteText(string path, string content)
     {
         File.WriteAllText(path, content, Utf8WithoutBom);
+    }
+
+    private static OpenXmlExtractedAsset GetExtractedAsset(
+        IReadOnlyDictionary<string, OpenXmlExtractedAsset> assets,
+        OpenXmlExtractedAssetKind kind,
+        string partUri,
+        string expectedSha256,
+        long expectedSizeBytes)
+    {
+        if (!assets.TryGetValue($"{kind}:{partUri}", out var asset) ||
+            !string.Equals(asset.Sha256, expectedSha256, StringComparison.Ordinal) ||
+            asset.SizeBytes != expectedSizeBytes)
+        {
+            throw new InvalidDataException(
+                $"Extracted asset snapshot '{partUri}' is missing or does not match its IR provenance.");
+        }
+
+        return asset;
+    }
+
+    private static void WriteExtractedAsset(string path, OpenXmlExtractedAsset asset)
+    {
+        var directory = Path.GetDirectoryName(path);
+
+        if (directory is not null)
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        stream.Write(asset.Content.Span);
     }
 
     private static string Hash(byte[] bytes)

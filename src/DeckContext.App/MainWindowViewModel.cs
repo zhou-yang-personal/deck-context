@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using DeckContext.Domain.Extraction;
+using DeckContext.Domain.Model;
 using DeckContext.Pipeline;
 
 namespace DeckContext.App;
@@ -84,10 +85,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool CanOpenOutput => HasCompleted && Directory.Exists(OutputDirectory);
 
+    public bool CanChangePaths => !IsBusy;
+
     public ObservableCollection<DiagnosticDisplayItem> Diagnostics { get; } = [];
 
     public void SetInputPath(string path)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         InputPath = path;
         HasCompleted = false;
         ProgressPercentage = 0;
@@ -109,6 +117,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public void SetOutputDirectory(string path)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
         OutputDirectory = path;
         HasCompleted = false;
         NotifyCommandState();
@@ -122,6 +135,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        var jobInputPath = InputPath;
+        var jobOutputDirectory = OutputDirectory;
         IsBusy = true;
         HasCompleted = false;
         ProgressPercentage = 0;
@@ -141,7 +156,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 StatusMessage = update.Message;
             });
 
-            var result = await conversionService.ConvertAsync(InputPath, OutputDirectory, progress, cancellationToken);
+            var result = await conversionService.ConvertAsync(
+                jobInputPath,
+                jobOutputDirectory,
+                progress,
+                cancellationToken);
             Interlocked.Exchange(ref acceptsProgress, 0);
             ProgressPercentage = 100;
             HasCompleted = true;
@@ -160,7 +179,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     diagnostic.Severity.ToString(),
                     diagnostic.Code,
                     diagnostic.Message,
-                    diagnostic.Source?.ToString() ?? "Deck"));
+                    FormatLocation(diagnostic.Source)));
             }
         }
         catch (OperationCanceledException)
@@ -183,6 +202,39 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanOpenOutput));
+        OnPropertyChanged(nameof(CanChangePaths));
+    }
+
+    private static string FormatLocation(SourceReference? source)
+    {
+        if (source is null)
+        {
+            return "Deck";
+        }
+
+        var parts = new List<string>();
+
+        if (source.SlideIndex is not null)
+        {
+            parts.Add($"Slide {source.SlideIndex}");
+        }
+
+        if (source.ElementId is not null)
+        {
+            parts.Add($"object {source.ElementId}");
+        }
+
+        if (source.PartUri is not null)
+        {
+            parts.Add(source.PartUri);
+        }
+
+        if (source.RelationshipId is not null)
+        {
+            parts.Add($"relationship {source.RelationshipId}");
+        }
+
+        return parts.Count == 0 ? source.SourceFileName : string.Join(" · ", parts);
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

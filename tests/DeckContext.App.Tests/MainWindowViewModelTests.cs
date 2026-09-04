@@ -62,6 +62,33 @@ public sealed class MainWindowViewModelTests
         Assert.Contains(".pptx", viewModel.StatusMessage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ConvertAsync_keeps_the_active_job_paths_immutable_while_busy()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var sourcePath = workspace.CreatePowerPointPlaceholder("sample.pptx");
+        var otherSourcePath = workspace.CreatePowerPointPlaceholder("other.pptx");
+        var service = new BlockingConversionService();
+        var viewModel = new MainWindowViewModel(service);
+        viewModel.SetInputPath(sourcePath);
+        var originalOutput = viewModel.OutputDirectory;
+
+        var conversion = viewModel.ConvertAsync(TestContext.Current.CancellationToken);
+        await service.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.CanChangePaths);
+        viewModel.SetInputPath(otherSourcePath);
+        viewModel.SetOutputDirectory(Path.Combine(workspace.Path, "other-output"));
+        Assert.Equal(sourcePath, viewModel.InputPath);
+        Assert.Equal(originalOutput, viewModel.OutputDirectory);
+
+        service.Release.SetResult();
+        await conversion;
+        Assert.True(viewModel.HasCompleted);
+        Assert.Equal(originalOutput, viewModel.OutputDirectory);
+    }
+
     private sealed class FakeConversionService(params ExtractionDiagnostic[] diagnostics)
         : IDeckContextConversionService
     {
@@ -91,6 +118,38 @@ public sealed class MainWindowViewModelTests
                 Path.Combine(outputDirectory, "extraction-report.json"),
                 Path.Combine(outputDirectory, "manifest.json"),
                 []));
+        }
+    }
+
+    private sealed class BlockingConversionService : IDeckContextConversionService
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<ContextPackageResult> ConvertAsync(
+            string sourcePath,
+            string outputDirectory,
+            IProgress<ConversionProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            Started.SetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            Directory.CreateDirectory(outputDirectory);
+            var document = new DeckContextDocument(
+                DeckContextDocument.CurrentSchemaVersion,
+                new DeckMetadata(Path.GetFileName(sourcePath), null, null, null, 0),
+                [],
+                ExtractionStatus.Succeeded,
+                []);
+            return new ContextPackageResult(
+                document,
+                outputDirectory,
+                Path.Combine(outputDirectory, "deck.context.md"),
+                Path.Combine(outputDirectory, "deck.context.json"),
+                Path.Combine(outputDirectory, "extraction-report.json"),
+                Path.Combine(outputDirectory, "manifest.json"),
+                []);
         }
     }
 

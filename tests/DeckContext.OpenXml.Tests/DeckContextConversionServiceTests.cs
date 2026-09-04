@@ -122,4 +122,144 @@ public sealed class DeckContextConversionServiceTests
         var report = await File.ReadAllTextAsync(result.ExtractionReportPath, TestContext.Current.CancellationToken);
         Assert.Contains("DCX-WORKBOOK-READ-FAILED", report, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Convert_replaces_an_owned_package_without_leaving_stale_assets()
+    {
+        using var directory = new TemporaryDirectory();
+        var imageSource = PresentationFixture.CreateImage(directory.Path);
+        var workbookSource = PresentationFixture.CreateEmbeddedWorkbookChart(directory.Path);
+        var output = Path.Combine(directory.Path, "replace-output");
+        var service = new DeckContextConversionService();
+
+        await service.ConvertAsync(
+            imageSource,
+            output,
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(File.Exists(Path.Combine(output, "images", "image1.png")));
+
+        var result = await service.ConvertAsync(
+            workbookSource,
+            output,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(Directory.Exists(Path.Combine(output, "images")));
+        Assert.Single(result.Assets, asset => asset.Kind == ContextPackageAssetKind.EmbeddedWorkbook);
+        Assert.True(File.Exists(Path.Combine(output, "workbooks", "workbook1.xlsx")));
+    }
+
+    [Fact]
+    public async Task Convert_refuses_to_overwrite_a_non_package_directory()
+    {
+        using var directory = new TemporaryDirectory();
+        var source = PresentationFixture.CreateImage(directory.Path);
+        var output = Path.Combine(directory.Path, "unowned-output");
+        Directory.CreateDirectory(output);
+        var sentinelPath = Path.Combine(output, "keep-me.txt");
+        await File.WriteAllTextAsync(
+            sentinelPath,
+            "user data",
+            TestContext.Current.CancellationToken);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new DeckContextConversionService().ConvertAsync(
+                source,
+                output,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Contains("not an intact DeckContext package", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "user data",
+            await File.ReadAllTextAsync(sentinelPath, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Convert_refuses_to_overwrite_a_directory_that_only_contains_subdirectories()
+    {
+        using var directory = new TemporaryDirectory();
+        var source = PresentationFixture.CreateImage(directory.Path);
+        var output = Path.Combine(directory.Path, "directory-only-output");
+        var sentinelDirectory = Path.Combine(output, "keep-me");
+        Directory.CreateDirectory(sentinelDirectory);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new DeckContextConversionService().ConvertAsync(
+                source,
+                output,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.True(Directory.Exists(sentinelDirectory));
+    }
+
+    [Fact]
+    public async Task Convert_refuses_to_overwrite_a_modified_package()
+    {
+        using var directory = new TemporaryDirectory();
+        var source = PresentationFixture.CreateImage(directory.Path);
+        var output = Path.Combine(directory.Path, "modified-output");
+        var service = new DeckContextConversionService();
+        await service.ConvertAsync(
+            source,
+            output,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var markdownPath = Path.Combine(output, "deck.context.md");
+        var originalMarkdown = await File.ReadAllTextAsync(
+            markdownPath,
+            TestContext.Current.CancellationToken);
+        var modifiedMarkdown = $"!{originalMarkdown[1..]}";
+        await File.WriteAllTextAsync(
+            markdownPath,
+            modifiedMarkdown,
+            TestContext.Current.CancellationToken);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ConvertAsync(
+                source,
+                output,
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Contains("not an intact DeckContext package", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            modifiedMarkdown,
+            await File.ReadAllTextAsync(markdownPath, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Convert_preserves_the_previous_package_when_staged_work_is_cancelled()
+    {
+        using var directory = new TemporaryDirectory();
+        var imageSource = PresentationFixture.CreateImage(directory.Path);
+        var workbookSource = PresentationFixture.CreateEmbeddedWorkbookChart(directory.Path);
+        var output = Path.Combine(directory.Path, "cancel-output");
+        var service = new DeckContextConversionService();
+        await service.ConvertAsync(
+            imageSource,
+            output,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var originalManifest = await File.ReadAllTextAsync(
+            Path.Combine(output, "manifest.json"),
+            TestContext.Current.CancellationToken);
+        using var cancellation = new CancellationTokenSource();
+        var progress = new CallbackProgress(item =>
+        {
+            if (item.Percentage == 92)
+            {
+                cancellation.Cancel();
+            }
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            service.ConvertAsync(workbookSource, output, progress, cancellation.Token));
+
+        Assert.Equal(
+            originalManifest,
+            await File.ReadAllTextAsync(Path.Combine(output, "manifest.json"), TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(Path.Combine(output, "images", "image1.png")));
+        Assert.False(Directory.Exists(Path.Combine(output, "workbooks")));
+    }
+
+    private sealed class CallbackProgress(Action<ConversionProgress> callback) : IProgress<ConversionProgress>
+    {
+        public void Report(ConversionProgress value) => callback(value);
+    }
 }

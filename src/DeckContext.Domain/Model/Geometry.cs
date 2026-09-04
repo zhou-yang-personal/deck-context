@@ -18,3 +18,13 @@ public sealed record NormalizedGeometry(
     double Y,
     double Width,
     double Height);
+
+public sealed record GroupTransformContext(
+    long ChildOffsetX,
+    long ChildOffsetY,
+    long ChildExtentWidth,
+    long ChildExtentHeight,
+    long? RotationUnits,
+    double? RotationDegrees,
+    bool? FlipHorizontal,
+    bool? FlipVertical);

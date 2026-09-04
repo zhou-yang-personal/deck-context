@@ -14,8 +14,14 @@ namespace DeckContext.OpenXml;
 public sealed class OpenXmlDeckContextReader : IDeckContextReader
 {
     private const string ExtractorName = "OpenXmlPackageReader";
+    private const double RotationUnitScale = 60_000d;
 
     public DeckContextDocument Read(
+        string sourcePath,
+        CancellationToken cancellationToken = default) =>
+        ReadPackage(sourcePath, cancellationToken).Document;
+
+    public OpenXmlDeckContextReadResult ReadPackage(
         string sourcePath,
         CancellationToken cancellationToken = default)
     {
@@ -25,10 +31,12 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
 
         if (!File.Exists(sourcePath))
         {
-            return FailedDocument(
-                sourceFileName,
-                "DCX-PACKAGE-NOT-FOUND",
-                "The source PPTX file does not exist.");
+            return new OpenXmlDeckContextReadResult(
+                FailedDocument(
+                    sourceFileName,
+                    "DCX-PACKAGE-NOT-FOUND",
+                    "The source PPTX file does not exist."),
+                []);
         }
 
         try
@@ -40,14 +48,16 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         }
         catch (Exception exception) when (IsExpectedPackageFailure(exception))
         {
-            return FailedDocument(
-                sourceFileName,
-                "DCX-PACKAGE-OPEN-FAILED",
-                $"The PPTX package could not be opened: {exception.Message}");
+            return new OpenXmlDeckContextReadResult(
+                FailedDocument(
+                    sourceFileName,
+                    "DCX-PACKAGE-OPEN-FAILED",
+                    $"The PPTX package could not be opened: {exception.Message}"),
+                []);
         }
     }
 
-    private static DeckContextDocument ReadPresentation(
+    private static OpenXmlDeckContextReadResult ReadPresentation(
         PresentationDocument presentationDocument,
         string sourceFileName,
         CancellationToken cancellationToken)
@@ -56,10 +66,12 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
 
         if (presentationPart?.Presentation is null)
         {
-            return FailedDocument(
-                sourceFileName,
-                "DCX-PRESENTATION-PART-MISSING",
-                "The PPTX package does not contain a readable presentation part.");
+            return new OpenXmlDeckContextReadResult(
+                FailedDocument(
+                    sourceFileName,
+                    "DCX-PRESENTATION-PART-MISSING",
+                    "The PPTX package does not contain a readable presentation part."),
+                []);
         }
 
         var deckDiagnostics = new List<ExtractionDiagnostic>();
@@ -83,6 +95,7 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             .ToArray() ?? [];
 
         var slides = new List<SlideContext>(slideIds.Length);
+        var assets = new Dictionary<string, OpenXmlExtractedAsset>(StringComparer.Ordinal);
 
         for (var index = 0; index < slideIds.Length; index++)
         {
@@ -93,22 +106,28 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 index + 1,
                 sourceFileName,
                 width,
-                height));
+                height,
+                assets));
         }
 
         var status = AggregateDeckStatus(deckDiagnostics, slides);
 
-        return new DeckContextDocument(
-            DeckContextDocument.CurrentSchemaVersion,
-            new DeckMetadata(
-                sourceFileName,
-                presentationPart.Uri.OriginalString,
-                width,
-                height,
-                slideIds.Length),
-            slides,
-            status,
-            deckDiagnostics);
+        return new OpenXmlDeckContextReadResult(
+            new DeckContextDocument(
+                DeckContextDocument.CurrentSchemaVersion,
+                new DeckMetadata(
+                    sourceFileName,
+                    presentationPart.Uri.OriginalString,
+                    width,
+                    height,
+                    slideIds.Length),
+                slides,
+                status,
+                deckDiagnostics),
+            assets.Values
+                .OrderBy(asset => asset.Kind)
+                .ThenBy(asset => asset.PartUri, StringComparer.Ordinal)
+                .ToArray());
     }
 
     private static SlideContext ReadSlide(
@@ -117,7 +136,8 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         int slideIndex,
         string sourceFileName,
         long? width,
-        long? height)
+        long? height,
+        IDictionary<string, OpenXmlExtractedAsset> assets)
     {
         var relationshipId = slideId.RelationshipId?.Value;
         var slideIdentity = slideId.Id?.Value.ToString(CultureInfo.InvariantCulture);
@@ -153,9 +173,9 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 slidePart,
                 sourceFileName,
                 slideIndex,
-                relationshipId,
                 width,
-                height);
+                height,
+                assets);
             var slideStatus = elements.Any(element =>
                 element.Status is ExtractionStatus.Partial or ExtractionStatus.Failed or ExtractionStatus.Unsupported)
                 ? ExtractionStatus.Partial
@@ -190,9 +210,9 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         SlidePart slidePart,
         string sourceFileName,
         int slideIndex,
-        string relationshipId,
         long? slideWidth,
-        long? slideHeight)
+        long? slideHeight,
+        IDictionary<string, OpenXmlExtractedAsset> assets)
     {
         var shapeTree = slidePart.Slide?.CommonSlideData?.ShapeTree;
 
@@ -207,12 +227,14 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             slidePart,
             sourceFileName,
             slideIndex,
-            relationshipId,
             slidePart.Uri.OriginalString,
             null,
             GeometryCoordinateSpace.Slide,
             slideWidth,
             slideHeight,
+            AffineTransform.Identity,
+            [],
+            assets,
             elements);
 
         return elements;
@@ -223,12 +245,14 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         SlidePart slidePart,
         string sourceFileName,
         int slideIndex,
-        string relationshipId,
         string slidePartUri,
         string? parentGroupId,
         GeometryCoordinateSpace coordinateSpace,
         long? slideWidth,
         long? slideHeight,
+        AffineTransform? containerToSlide,
+        IReadOnlyList<int> parentZOrderPath,
+        IDictionary<string, OpenXmlExtractedAsset> assets,
         ICollection<SlideElementContext> elements)
     {
         var sourceElements = container.ChildElements
@@ -245,16 +269,27 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             var source = new SourceReference(
                 sourceFileName,
                 slidePartUri,
-                relationshipId,
+                null,
                 slideIndex,
                 elementId,
                 elementName);
 
             var diagnostics = new List<ExtractionDiagnostic>();
             var nativeGeometry = ReadNativeGeometry(sourceElement, coordinateSpace);
-            var normalizedGeometry = coordinateSpace == GeometryCoordinateSpace.Slide
-                ? NormalizeGeometry(nativeGeometry, slideWidth, slideHeight, source, diagnostics)
+            var groupTransform = sourceElement is P.GroupShape groupShapeValue
+                ? ReadGroupTransform(groupShapeValue)
                 : null;
+            var elementToSlide = sourceElement is P.GroupShape
+                ? ComposeGroupOuterTransform(containerToSlide, nativeGeometry, groupTransform)
+                : containerToSlide;
+            var normalizedGeometry = NormalizeGeometry(
+                nativeGeometry,
+                elementToSlide,
+                slideWidth,
+                slideHeight,
+                source,
+                diagnostics);
+            var zOrderPath = parentZOrderPath.Append(zOrder).ToArray();
             var text = ReadText(sourceElement);
             var table = kind == ElementKind.Table
                 ? ReadTable(sourceElement, source, diagnostics)
@@ -269,12 +304,26 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             var image = imageResult?.Image;
             var status = chartResult?.Status ?? imageResult?.Status ?? ExtractionStatus.Succeeded;
 
+            AddAsset(assets, chartResult?.Asset);
+            AddAsset(assets, imageResult?.Asset);
+
             if (kind == ElementKind.Unknown)
             {
                 status = ExtractionStatus.Unsupported;
                 diagnostics.Add(new ExtractionDiagnostic(
                     "DCX-ELEMENT-TYPE-UNSUPPORTED",
                     $"The slide element type '{sourceElement.LocalName}' is not recognized.",
+                    DiagnosticSeverity.Warning,
+                    "SlideElementReader",
+                    DiagnosticOutcome.Skipped,
+                    source));
+            }
+            else if (kind == ElementKind.GraphicFrame)
+            {
+                status = ExtractionStatus.Unsupported;
+                diagnostics.Add(new ExtractionDiagnostic(
+                    "DCX-GRAPHIC-FRAME-TYPE-UNSUPPORTED",
+                    $"The graphic frame content '{ReadGraphicDataUri(sourceElement) ?? "unknown"}' is not supported.",
                     DiagnosticSeverity.Warning,
                     "SlideElementReader",
                     DiagnosticOutcome.Skipped,
@@ -308,6 +357,18 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                     source));
             }
 
+            if (kind == ElementKind.Group && groupTransform is null)
+            {
+                status = ExtractionStatus.Partial;
+                diagnostics.Add(new ExtractionDiagnostic(
+                    "DCX-GROUP-TRANSFORM-INCOMPLETE",
+                    "The group does not declare a complete child coordinate transform; child slide geometry is unavailable.",
+                    DiagnosticSeverity.Warning,
+                    "GeometryExtractor",
+                    DiagnosticOutcome.Partial,
+                    source));
+            }
+
             if (status == ExtractionStatus.Succeeded &&
                 diagnostics.Any(diagnostic => diagnostic.Outcome == DiagnosticOutcome.Partial))
             {
@@ -327,7 +388,9 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                 text,
                 table,
                 chart,
-                image);
+                image,
+                zOrderPath,
+                groupTransform);
             elements.Add(element);
 
             if (sourceElement is P.GroupShape groupShape)
@@ -337,12 +400,14 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
                     slidePart,
                     sourceFileName,
                     slideIndex,
-                    relationshipId,
                     slidePartUri,
                     elementId,
                     GeometryCoordinateSpace.ParentGroup,
                     slideWidth,
                     slideHeight,
+                    ComposeGroupChildTransform(containerToSlide, nativeGeometry, groupTransform),
+                    zOrderPath,
+                    assets,
                     elements);
             }
         }
@@ -367,6 +432,28 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             P.ConnectionShape => ElementKind.Connector,
             _ => ElementKind.Unknown,
         };
+    }
+
+    private static string? ReadGraphicDataUri(OpenXmlElement element)
+    {
+        return element.Descendants()
+            .FirstOrDefault(descendant => descendant.LocalName == "graphicData")?
+            .GetAttributes()
+            .FirstOrDefault(attribute => attribute.LocalName == "uri")
+            .Value;
+    }
+
+    private static void AddAsset(
+        IDictionary<string, OpenXmlExtractedAsset> assets,
+        OpenXmlExtractedAsset? asset)
+    {
+        if (asset is null)
+        {
+            return;
+        }
+
+        var key = $"{asset.Kind}:{asset.PartUri}";
+        assets.TryAdd(key, asset);
     }
 
     private static P.NonVisualDrawingProperties? GetNonVisualDrawingProperties(OpenXmlElement element)
@@ -415,8 +502,98 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
         return new NativeGeometry(x, y, width, height, coordinateSpace);
     }
 
+    private static GroupTransformContext? ReadGroupTransform(P.GroupShape groupShape)
+    {
+        var transform = groupShape.GroupShapeProperties?.TransformGroup;
+        var childOffset = transform?.ChildOffset;
+        var childExtents = transform?.ChildExtents;
+
+        if (!TryReadLongAttribute(childOffset, "x", out var childX) ||
+            !TryReadLongAttribute(childOffset, "y", out var childY) ||
+            !TryReadLongAttribute(childExtents, "cx", out var childWidth) ||
+            !TryReadLongAttribute(childExtents, "cy", out var childHeight) ||
+            childWidth <= 0 || childHeight <= 0)
+        {
+            return null;
+        }
+
+        var rotation = ReadLongAttribute(transform, "rot");
+        return new GroupTransformContext(
+            childX,
+            childY,
+            childWidth,
+            childHeight,
+            rotation,
+            rotation is null ? null : rotation.Value / RotationUnitScale,
+            ReadBooleanAttribute(transform, "flipH"),
+            ReadBooleanAttribute(transform, "flipV"));
+    }
+
+    private static AffineTransform? ComposeGroupOuterTransform(
+        AffineTransform? containerToSlide,
+        NativeGeometry? geometry,
+        GroupTransformContext? groupTransform)
+    {
+        if (containerToSlide is null || geometry is null)
+        {
+            return containerToSlide;
+        }
+
+        return groupTransform is null
+            ? containerToSlide
+            : containerToSlide.Value.Compose(CreateGroupOuterTransform(geometry, groupTransform));
+    }
+
+    private static AffineTransform? ComposeGroupChildTransform(
+        AffineTransform? containerToSlide,
+        NativeGeometry? geometry,
+        GroupTransformContext? groupTransform)
+    {
+        if (containerToSlide is null || geometry is null || groupTransform is null)
+        {
+            return null;
+        }
+
+        var scaleX = geometry.Width / (double)groupTransform.ChildExtentWidth;
+        var scaleY = geometry.Height / (double)groupTransform.ChildExtentHeight;
+        var childToGroup = new AffineTransform(
+            scaleX,
+            0,
+            0,
+            scaleY,
+            geometry.X - (groupTransform.ChildOffsetX * scaleX),
+            geometry.Y - (groupTransform.ChildOffsetY * scaleY));
+        var groupOuter = CreateGroupOuterTransform(geometry, groupTransform);
+        return containerToSlide.Value.Compose(groupOuter.Compose(childToGroup));
+    }
+
+    private static AffineTransform CreateGroupOuterTransform(
+        NativeGeometry geometry,
+        GroupTransformContext transform)
+    {
+        var flipX = transform.FlipHorizontal is true ? -1d : 1d;
+        var flipY = transform.FlipVertical is true ? -1d : 1d;
+        var radians = (transform.RotationDegrees ?? 0d) * Math.PI / 180d;
+        var cosine = Math.Cos(radians);
+        var sine = Math.Sin(radians);
+        var centerX = geometry.X + (geometry.Width / 2d);
+        var centerY = geometry.Y + (geometry.Height / 2d);
+        var aroundOrigin = new AffineTransform(
+            cosine * flipX,
+            sine * flipX,
+            -sine * flipY,
+            cosine * flipY,
+            0,
+            0);
+
+        return AffineTransform.Translation(centerX, centerY)
+            .Compose(aroundOrigin)
+            .Compose(AffineTransform.Translation(-centerX, -centerY));
+    }
+
     private static NormalizedGeometry? NormalizeGeometry(
         NativeGeometry? nativeGeometry,
+        AffineTransform? elementToSlide,
         long? slideWidth,
         long? slideHeight,
         SourceReference source,
@@ -427,11 +604,11 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             return null;
         }
 
-        if (slideWidth is null or <= 0 || slideHeight is null or <= 0)
+        if (elementToSlide is null || slideWidth is null or <= 0 || slideHeight is null or <= 0)
         {
             diagnostics.Add(new ExtractionDiagnostic(
                 "DCX-GEOMETRY-NORMALIZATION-UNAVAILABLE",
-                "Normalized geometry could not be calculated because the presentation slide size is missing or invalid.",
+                "Normalized geometry could not be calculated because the slide size or parent group transform is missing or invalid.",
                 DiagnosticSeverity.Warning,
                 "GeometryExtractor",
                 DiagnosticOutcome.Partial,
@@ -439,11 +616,12 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             return null;
         }
 
+        var bounds = elementToSlide.Value.TransformBounds(nativeGeometry);
         return new NormalizedGeometry(
-            nativeGeometry.X / (double)slideWidth.Value,
-            nativeGeometry.Y / (double)slideHeight.Value,
-            nativeGeometry.Width / (double)slideWidth.Value,
-            nativeGeometry.Height / (double)slideHeight.Value);
+            bounds.X / slideWidth.Value,
+            bounds.Y / slideHeight.Value,
+            bounds.Width / slideWidth.Value,
+            bounds.Height / slideHeight.Value);
     }
 
     private static TextContentContext? ReadText(OpenXmlElement element)
@@ -695,8 +873,8 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
     {
         return ReadStringAttribute(element, attributeName) switch
         {
-            "1" or "true" => true,
-            "0" or "false" => false,
+            "1" or "true" or "on" => true,
+            "0" or "false" or "off" => false,
             _ => null,
         };
     }
@@ -802,5 +980,54 @@ public sealed class OpenXmlDeckContextReader : IDeckContextReader
             or InvalidDataException
             or OpenXmlPackageException
             or ArgumentException;
+    }
+
+    private readonly record struct GeometryBounds(double X, double Y, double Width, double Height);
+
+    private readonly record struct AffineTransform(
+        double M11,
+        double M12,
+        double M21,
+        double M22,
+        double OffsetX,
+        double OffsetY)
+    {
+        public static AffineTransform Identity { get; } = new(1, 0, 0, 1, 0, 0);
+
+        public static AffineTransform Translation(double x, double y) => new(1, 0, 0, 1, x, y);
+
+        public AffineTransform Compose(AffineTransform inner)
+        {
+            return new AffineTransform(
+                (M11 * inner.M11) + (M21 * inner.M12),
+                (M12 * inner.M11) + (M22 * inner.M12),
+                (M11 * inner.M21) + (M21 * inner.M22),
+                (M12 * inner.M21) + (M22 * inner.M22),
+                (M11 * inner.OffsetX) + (M21 * inner.OffsetY) + OffsetX,
+                (M12 * inner.OffsetX) + (M22 * inner.OffsetY) + OffsetY);
+        }
+
+        public GeometryBounds TransformBounds(NativeGeometry geometry)
+        {
+            var points = new[]
+            {
+                Transform(geometry.X, geometry.Y),
+                Transform(geometry.X + geometry.Width, geometry.Y),
+                Transform(geometry.X, geometry.Y + geometry.Height),
+                Transform(geometry.X + geometry.Width, geometry.Y + geometry.Height),
+            };
+            var minimumX = points.Min(point => point.X);
+            var maximumX = points.Max(point => point.X);
+            var minimumY = points.Min(point => point.Y);
+            var maximumY = points.Max(point => point.Y);
+            return new GeometryBounds(minimumX, minimumY, maximumX - minimumX, maximumY - minimumY);
+        }
+
+        private (double X, double Y) Transform(double x, double y)
+        {
+            return (
+                (M11 * x) + (M21 * y) + OffsetX,
+                (M12 * x) + (M22 * y) + OffsetY);
+        }
     }
 }

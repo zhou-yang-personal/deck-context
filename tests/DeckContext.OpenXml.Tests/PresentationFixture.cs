@@ -83,6 +83,24 @@ internal static class PresentationFixture
         return CreateChartPackage(directory, "chart-unsupported.pptx", UnsupportedChart);
     }
 
+    public static string CreateBubbleChart(string directory)
+    {
+        return CreateChartPackage(directory, "chart-bubble.pptx", BubbleChart);
+    }
+
+    public static string CreateUnsupportedGraphicFrame(string directory)
+    {
+        var path = Path.Combine(directory, "graphic-frame-unsupported.pptx");
+
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        WriteEntry(archive, "[Content_Types].xml", ContentTypes(twoSlides: false));
+        WriteEntry(archive, "_rels/.rels", PackageRelationships);
+        WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
+        WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
+        WriteEntry(archive, "ppt/slides/slide1.xml", SlideWithUnsupportedGraphicFrame);
+        return path;
+    }
+
     public static string CreateEmbeddedWorkbookChart(string directory)
     {
         return CreateChartPackage(
@@ -475,6 +493,11 @@ internal static class PresentationFixture
                   <a:chExt cx="0" cy="0"/>
                 </a:xfrm>
               </p:grpSpPr>
+              <p:sp>
+                <p:nvSpPr><p:cNvPr id="9" name="Before Group"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+                <p:spPr><a:xfrm><a:off x="100000" y="100000"/><a:ext cx="500000" cy="300000"/></a:xfrm></p:spPr>
+                <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Before group</a:t></a:r></a:p></p:txBody>
+              </p:sp>
               <p:grpSp>
                 <p:nvGrpSpPr>
                   <p:cNvPr id="10" name="Evidence Group"/>
@@ -486,7 +509,7 @@ internal static class PresentationFixture
                     <a:off x="2000000" y="1000000"/>
                     <a:ext cx="4000000" cy="2000000"/>
                     <a:chOff x="0" y="0"/>
-                    <a:chExt cx="4000000" cy="2000000"/>
+                    <a:chExt cx="2000000" cy="1000000"/>
                   </a:xfrm>
                 </p:grpSpPr>
                 <p:sp>
@@ -679,6 +702,25 @@ internal static class PresentationFixture
         </p:sld>
         """;
 
+    private const string SlideWithUnsupportedGraphicFrame = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+               xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+              <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+              <p:graphicFrame>
+                <p:nvGraphicFramePr><p:cNvPr id="50" name="Architecture Diagram"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+                <p:xfrm><a:off x="1000000" y="1000000"/><a:ext cx="5000000" cy="3000000"/></p:xfrm>
+                <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram"/></a:graphic>
+              </p:graphicFrame>
+            </p:spTree>
+          </p:cSld>
+          <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+        </p:sld>
+        """;
+
     private static readonly byte[] ImagePng = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
@@ -735,6 +777,27 @@ internal static class PresentationFixture
         "</c:chartSpace>",
         "<c:externalData r:id=\"rId1\"><c:autoUpdate val=\"0\"/></c:externalData></c:chartSpace>",
         StringComparison.Ordinal);
+
+    private const string BubbleChart = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+                      xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+          <c:chart>
+            <c:plotArea>
+              <c:layout/>
+              <c:bubbleChart>
+                <c:ser>
+                  <c:idx val="0"/><c:order val="0"/>
+                  <c:tx><c:v>Markets</c:v></c:tx>
+                  <c:xVal><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numLit></c:xVal>
+                  <c:yVal><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>30</c:v></c:pt><c:pt idx="1"><c:v>40</c:v></c:pt></c:numLit></c:yVal>
+                  <c:bubbleSize><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>5</c:v></c:pt><c:pt idx="1"><c:v>9</c:v></c:pt></c:numLit></c:bubbleSize>
+                </c:ser>
+              </c:bubbleChart>
+            </c:plotArea>
+          </c:chart>
+        </c:chartSpace>
+        """;
 
     private const string UnsupportedChart = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

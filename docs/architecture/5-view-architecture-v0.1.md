@@ -183,7 +183,9 @@ SourceReference
 GeometryNative
 GeometryNormalized
 ZOrder
+ZOrderPath
 ParentGroup / Child relationship
+GroupChildTransform
 ExtractionStatus
 ```
 
@@ -261,6 +263,7 @@ ChartElement
 │  ├─ Name
 │  ├─ Categories[]
 │  ├─ Values[]
+│  ├─ BubbleSizes[] (bubble charts)
 │  └─ SourceFormula / SourceRange
 ├─ Axes[]
 ├─ Legend
@@ -293,10 +296,13 @@ ChartElement
 
 - native coordinates；
 - normalized coordinates（例如 0~1）；
-- object order/z-order；
-- group relationship。
+- object-local z-order 与可确定排序的层级 `ZOrderPath`；
+- group relationship、child offset/extents、rotation/flip；
+- group child 经完整父级变换换算后的 slide-normalized geometry。
 
 Markdown 层可以基于这些信息输出更适合 LLM 的区域/位置描述，但**推导结果与原始几何数据要分开**。
+
+分组对象不得仅保存无法还原的局部坐标。Reader 必须保留 `chOff/chExt` 等原始分组坐标信息，并通过确定性的 affine transform 计算子对象的 slide-space bounds；嵌套分组按父到子的变换链组合。
 
 ---
 

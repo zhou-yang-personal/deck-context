@@ -26,6 +26,8 @@ The V1 baseline focuses on:
 - machine-readable JSON output;
 - extraction diagnostics and traceability.
 
+The current machine-readable context schema is `0.2`; it adds hierarchical group ordering/transforms and bubble-chart size data to the original `0.1` contract.
+
 ## Architecture Direction
 
 V1 is a local Windows desktop application based on:
@@ -76,13 +78,15 @@ Select or drop a `.pptx`, optionally choose an output folder, then select **Extr
 - `workbooks\` — exact embedded workbook assets when present;
 - `images\` — exact internal image media when present.
 
+DeckContext publishes the package through a sibling staging directory and replaces an existing output only when it is empty or is an intact DeckContext-owned package. Choose a new or empty directory when exporting into a location that contains unrelated files.
+
 The same pipeline is available as a command for repeatable verification or automation:
 
 ```powershell
 .\DeckContext.Verification\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
 ```
 
-Both entry points read the PPTX once into the same IR, then project Markdown, JSON, diagnostics, manifest, and assets from that result. Images are preserved and identified, but pixel semantics are explicitly reported as not analyzed until an OCR/Vision provider is configured.
+Both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project Markdown, JSON, diagnostics, manifest, and assets from that result. Images are preserved and identified, but pixel semantics are explicitly reported as not analyzed until an OCR/Vision provider is configured.
 
 ## Branch Strategy
 

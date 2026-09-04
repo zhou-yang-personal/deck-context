@@ -1,6 +1,7 @@
 using DeckContext.Domain.Diagnostics;
 using DeckContext.Domain.Extraction;
 using DeckContext.Domain.Model;
+using DeckContext.Export;
 using System.IO.Compression;
 using System.Security.Cryptography;
 
@@ -112,22 +113,61 @@ public sealed class OpenXmlDeckContextReaderTests
 
         Assert.Equal(ExtractionStatus.Succeeded, document.Status);
         var slide = Assert.Single(document.Slides);
-        Assert.Equal(2, slide.Elements.Count);
+        Assert.Equal(3, slide.Elements.Count);
 
-        var group = slide.Elements[0];
+        var precedingShape = slide.Elements[0];
+        Assert.Equal("9", precedingShape.Identity.Id);
+        Assert.Equal<int>([0], Assert.IsAssignableFrom<IReadOnlyList<int>>(precedingShape.ZOrderPath));
+
+        var group = slide.Elements[1];
         Assert.Equal(ElementKind.Group, group.Kind);
         Assert.Equal("10", group.Identity.Id);
         Assert.Null(group.ParentGroupId);
         Assert.Equal(GeometryCoordinateSpace.Slide, group.NativeGeometry?.CoordinateSpace);
         Assert.NotNull(group.NormalizedGeometry);
+        Assert.Equal<int>([1], Assert.IsAssignableFrom<IReadOnlyList<int>>(group.ZOrderPath));
+        var groupTransform = Assert.IsType<GroupTransformContext>(group.GroupTransform);
+        Assert.Equal(2_000_000L, groupTransform.ChildExtentWidth);
+        Assert.Equal(1_000_000L, groupTransform.ChildExtentHeight);
 
-        var child = slide.Elements[1];
+        var child = slide.Elements[2];
         Assert.Equal(ElementKind.Shape, child.Kind);
         Assert.Equal("11", child.Identity.Id);
         Assert.Equal("10", child.ParentGroupId);
         Assert.Equal(GeometryCoordinateSpace.ParentGroup, child.NativeGeometry?.CoordinateSpace);
-        Assert.Null(child.NormalizedGeometry);
+        Assert.Equal<int>([1, 0], Assert.IsAssignableFrom<IReadOnlyList<int>>(child.ZOrderPath));
+        var normalized = Assert.IsType<NormalizedGeometry>(child.NormalizedGeometry);
+        Assert.Equal(2_500_000d / 12_192_000d, normalized.X, precision: 8);
+        Assert.Equal(1_600_000d / 6_858_000d, normalized.Y, precision: 8);
+        Assert.Equal(4_000_000d / 12_192_000d, normalized.Width, precision: 8);
+        Assert.Equal(1_000_000d / 6_858_000d, normalized.Height, precision: 8);
         Assert.Equal("Grouped evidence", child.Text?.Paragraphs[0].Runs[0].Text);
+
+        var markdown = new DeckContextMarkdownExporter().Serialize(document);
+        Assert.True(
+            markdown.IndexOf("Before Group", StringComparison.Ordinal) <
+            markdown.IndexOf("Evidence Group", StringComparison.Ordinal));
+        Assert.True(
+            markdown.IndexOf("Evidence Group", StringComparison.Ordinal) <
+            markdown.IndexOf("Grouped Text", StringComparison.Ordinal));
+        Assert.Contains("#### 2.1. Shape", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Read_marks_unhandled_graphic_frame_content_as_unsupported()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateUnsupportedGraphicFrame(directory.Path);
+
+        var document = new OpenXmlDeckContextReader().Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Partial, document.Status);
+        var element = Assert.Single(Assert.Single(document.Slides).Elements);
+        Assert.Equal(ElementKind.GraphicFrame, element.Kind);
+        Assert.Equal(ExtractionStatus.Unsupported, element.Status);
+        var diagnostic = Assert.Single(element.Diagnostics);
+        Assert.Equal("DCX-GRAPHIC-FRAME-TYPE-UNSUPPORTED", diagnostic.Code);
+        Assert.Contains("/diagram", diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -256,6 +296,22 @@ public sealed class OpenXmlDeckContextReaderTests
     }
 
     [Fact]
+    public void Read_preserves_bubble_chart_size_values()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateBubbleChart(directory.Path);
+
+        var document = new OpenXmlDeckContextReader().Read(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExtractionStatus.Succeeded, document.Status);
+        var chart = Assert.IsType<ChartContext>(Assert.Single(Assert.Single(document.Slides).Elements).Chart);
+        var series = Assert.Single(Assert.Single(chart.Plots).Series);
+        Assert.Equal<double?>([10d, 20d], series.Categories?.Points.Select(point => point.NumericValue));
+        Assert.Equal<double?>([30d, 40d], series.Values?.Points.Select(point => point.NumericValue));
+        Assert.Equal<double?>([5d, 9d], series.BubbleSizes?.Points.Select(point => point.NumericValue));
+    }
+
+    [Fact]
     public void Read_degrades_only_a_chart_with_an_unresolved_relationship()
     {
         using var directory = new TemporaryDirectory();
@@ -274,6 +330,8 @@ public sealed class OpenXmlDeckContextReaderTests
         var diagnostic = Assert.Single(element.Diagnostics);
         Assert.Equal("DCX-CHART-RELATIONSHIP-FAILED", diagnostic.Code);
         Assert.Equal(DiagnosticOutcome.Skipped, diagnostic.Outcome);
+        Assert.Equal("/ppt/slides/slide1.xml", diagnostic.Source?.PartUri);
+        Assert.Equal("rId1", diagnostic.Source?.RelationshipId);
     }
 
     [Fact]
@@ -379,6 +437,8 @@ public sealed class OpenXmlDeckContextReaderTests
             item => item.Code == "DCX-WORKBOOK-READ-FAILED");
         Assert.Equal("EmbeddedWorkbookExtractor", diagnostic.Extractor);
         Assert.Equal(DiagnosticOutcome.Partial, diagnostic.Outcome);
+        Assert.Equal("/ppt/charts/chart1.xml", diagnostic.Source?.PartUri);
+        Assert.Equal("rId1", diagnostic.Source?.RelationshipId);
     }
 
     [Fact]
@@ -483,6 +543,27 @@ public sealed class OpenXmlDeckContextReaderTests
             element.Diagnostics,
             item => item.Code == "DCX-IMAGE-RELATIONSHIP-FAILED");
         Assert.Equal(DiagnosticOutcome.Skipped, diagnostic.Outcome);
+        Assert.Equal("/ppt/slides/slide1.xml", diagnostic.Source?.PartUri);
+        Assert.Equal("rId1", diagnostic.Source?.RelationshipId);
+    }
+
+    [Fact]
+    public void ReadPackage_returns_asset_bytes_from_the_same_package_session()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = PresentationFixture.CreateImage(directory.Path);
+
+        var result = new OpenXmlDeckContextReader().ReadPackage(
+            path,
+            TestContext.Current.CancellationToken);
+
+        var asset = Assert.Single(result.Assets);
+        Assert.Equal(OpenXmlExtractedAssetKind.Image, asset.Kind);
+        Assert.Equal("/ppt/media/image1.png", asset.PartUri);
+        Assert.Equal(asset.SizeBytes, asset.Content.Length);
+        Assert.Equal(
+            asset.Sha256,
+            Convert.ToHexString(SHA256.HashData(asset.Content.Span)).ToLowerInvariant());
     }
 }
 

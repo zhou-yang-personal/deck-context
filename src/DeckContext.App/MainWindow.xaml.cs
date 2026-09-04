@@ -73,13 +73,15 @@ public partial class MainWindow : Window
 
     private void Window_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = TryGetPowerPointPath(e.Data, out _) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = viewModel.CanChangePaths && TryGetPowerPointPath(e.Data, out _)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
         e.Handled = true;
     }
 
     private void Window_Drop(object sender, DragEventArgs e)
     {
-        if (TryGetPowerPointPath(e.Data, out var path))
+        if (viewModel.CanChangePaths && TryGetPowerPointPath(e.Data, out var path))
         {
             viewModel.SetInputPath(path);
         }

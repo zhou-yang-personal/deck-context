@@ -18,7 +18,8 @@ public sealed record ChartSeriesContext(
     string? NameFormula,
     ChartDataSourceContext? Categories,
     ChartDataSourceContext? Values,
-    string? NameWorkbookRangeId = null);
+    string? NameWorkbookRangeId = null,
+    ChartDataSourceContext? BubbleSizes = null);
 
 public sealed record ChartPlotContext(
     string Type,

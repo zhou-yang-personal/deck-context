@@ -11,7 +11,8 @@ namespace DeckContext.OpenXml;
 
 internal sealed record ChartExtractionResult(
     ChartContext? Chart,
-    ExtractionStatus Status);
+    ExtractionStatus Status,
+    OpenXmlExtractedAsset? Asset = null);
 
 internal static class OpenXmlChartExtractor
 {
@@ -69,6 +70,8 @@ internal static class OpenXmlChartExtractor
                 source));
             return new ChartExtractionResult(null, ExtractionStatus.Failed);
         }
+
+        source = source with { RelationshipId = relationshipId };
 
         try
         {
@@ -208,7 +211,7 @@ internal static class OpenXmlChartExtractor
                 status = ExtractionStatus.Partial;
             }
 
-            return new ChartExtractionResult(chart, status);
+            return new ChartExtractionResult(chart, status, workbookResult.Asset);
         }
         catch (Exception exception) when (IsExpectedChartFailure(exception))
         {
@@ -243,12 +246,27 @@ internal static class OpenXmlChartExtractor
                 FindDirectChild(sourceItem, "cat") ?? FindDirectChild(sourceItem, "xVal"));
             var values = ReadDataSource(
                 FindDirectChild(sourceItem, "val") ?? FindDirectChild(sourceItem, "yVal"));
+            var bubbleSizes = ReadDataSource(FindDirectChild(sourceItem, "bubbleSize"));
 
             if (values is null || values.Points.Count == 0)
             {
                 diagnostics.Add(CreateDiagnostic(
                     "DCX-CHART-SERIES-VALUES-MISSING",
                     $"Chart series {index} does not contain cached or literal values.",
+                    DiagnosticSeverity.Warning,
+                    DiagnosticOutcome.Partial,
+                    source));
+                status = status == ExtractionStatus.Unsupported
+                    ? status
+                    : ExtractionStatus.Partial;
+            }
+
+            if (plotElement.LocalName == "bubbleChart" &&
+                (bubbleSizes is null || bubbleSizes.Points.Count == 0))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    "DCX-CHART-BUBBLE-SIZES-MISSING",
+                    $"Bubble chart series {index} does not contain cached or literal bubble sizes.",
                     DiagnosticSeverity.Warning,
                     DiagnosticOutcome.Partial,
                     source));
@@ -278,7 +296,8 @@ internal static class OpenXmlChartExtractor
                 ReadSeriesName(nameContainer),
                 ReadFormula(nameContainer),
                 categories,
-                values));
+                values,
+                BubbleSizes: bubbleSizes));
         }
 
         return series;

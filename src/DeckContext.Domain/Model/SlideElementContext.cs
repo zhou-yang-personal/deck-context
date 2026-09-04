@@ -32,4 +32,6 @@ public sealed record SlideElementContext(
     TextContentContext? Text = null,
     TableContext? Table = null,
     ChartContext? Chart = null,
-    ImageContext? Image = null);
+    ImageContext? Image = null,
+    IReadOnlyList<int>? ZOrderPath = null,
+    GroupTransformContext? GroupTransform = null);

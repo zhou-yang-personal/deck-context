@@ -11,9 +11,9 @@ This checklist intentionally combines the three manual gates. One representative
 | V1 acceptance statement | Implemented evidence |
 |---|---|
 | 1. Parse text | Basic presentation fixture asserts paragraph/run content and formatting. |
-| 2. Preserve geometry/layout | Shape and grouped-object fixtures assert native EMU geometry, normalized geometry, z-order, and group provenance. |
+| 2. Preserve geometry/layout | Shape and grouped-object fixtures assert native EMU geometry, effective slide-normalized geometry, hierarchical z-order paths, group child transforms, and Markdown source order. |
 | 3. Parse native tables | Table fixture asserts dimensions, cell text, merges, and source identity. |
-| 4. Parse native charts | Chart fixture asserts chart types, title, legend, axes, and labels. |
+| 4. Parse native charts | Chart fixtures assert chart types, title, legend, axes, labels, and bubble-size values; unhandled graphic-frame content is explicitly unsupported. |
 | 5. Preserve series/categories/values | Chart fixture asserts real cached points, ordering, formulas, and number formats. |
 | 6. Follow embedded Excel | Workbook fixture asserts chart relationship, workbook part URI, relationship id, hash, and size. |
 | 7. Recover workbook source data | Workbook fixture asserts worksheet metadata, A1 ranges, cells, formulas, raw values, and resolved values. |
@@ -24,7 +24,9 @@ This checklist intentionally combines the three manual gates. One representative
 | 12. Degrade one object without losing the deck | Malformed workbook and missing relationship tests assert partial object/deck status while retaining usable cached/native data. |
 | 13. Produce genuinely readable LLM input | Markdown structure tests cover deck summary, slides, source-ordered objects, text, tables, charts, workbook cells, images, and diagnostics; final qualitative confirmation is manual. |
 
-The Windows workflow restores, builds, tests, and publishes both the WPF application and verification command. The complete-package tests also re-run a fixture twice and compare Markdown, JSON, report, and manifest byte-for-byte, then verify every manifest asset's size and SHA-256.
+The Windows workflow restores, builds, tests, and publishes both the WPF application and verification command. The complete-package tests also re-run a fixture twice and compare Markdown, JSON, report, and manifest byte-for-byte, verify every manifest asset's size and SHA-256, replace an intact prior package without stale assets, and refuse to overwrite unrelated files.
+
+The conversion session opens the PPTX once, captures immutable workbook/image asset snapshots alongside the IR, writes the full package to a sibling staging directory, and publishes it only after the manifest is complete. A failed or cancelled conversion therefore does not mix partial new output with an existing accepted package.
 
 `manifest.json` lists the generated context/report files and extracted binary assets; it deliberately does not hash itself, avoiding a recursive self-hash.
 

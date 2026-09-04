@@ -45,7 +45,8 @@ public sealed class DeckContextMarkdownExporter
             {
                 builder.AppendLine(
                     $"- `{diagnostic.Severity}` `{diagnostic.Code}` — {EscapeInline(diagnostic.Message)} " +
-                    $"(extractor: `{diagnostic.Extractor}`, outcome: `{diagnostic.Outcome}`)");
+                    $"(extractor: `{diagnostic.Extractor}`, outcome: `{diagnostic.Outcome}`" +
+                    FormatDiagnosticSource(diagnostic.Source) + ")");
             }
         }
 
@@ -61,7 +62,7 @@ public sealed class DeckContextMarkdownExporter
         builder.AppendLine($"- Source part: `{slide.Metadata.PartUri ?? "unknown"}`");
 
         var title = slide.Elements
-            .OrderBy(element => element.ZOrder)
+            .OrderBy(ElementOrderPath, ZOrderPathComparer.Instance)
             .Where(element => element.Text is not null)
             .Select(element => PlainText(element.Text!))
             .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
@@ -81,7 +82,7 @@ public sealed class DeckContextMarkdownExporter
             return;
         }
 
-        foreach (var element in slide.Elements.OrderBy(element => element.ZOrder))
+        foreach (var element in slide.Elements.OrderBy(ElementOrderPath, ZOrderPathComparer.Instance))
         {
             WriteElement(builder, element);
         }
@@ -90,8 +91,9 @@ public sealed class DeckContextMarkdownExporter
     private static void WriteElement(StringBuilder builder, SlideElementContext element)
     {
         builder.AppendLine();
+        var orderLabel = string.Join(".", ElementOrderPath(element).Select(position => position + 1));
         builder.AppendLine(
-            $"#### {element.ZOrder + 1}. {element.Kind} — {EscapeInline(element.Identity.Name ?? "Unnamed object")}");
+            $"#### {orderLabel}. {element.Kind} — {EscapeInline(element.Identity.Name ?? "Unnamed object")}");
         builder.AppendLine();
         builder.AppendLine(
             $"- Source: slide {element.Source.SlideIndex?.ToString(CultureInfo.InvariantCulture) ?? "?"}, " +
@@ -103,6 +105,16 @@ public sealed class DeckContextMarkdownExporter
         }
 
         WriteGeometry(builder, element);
+
+        if (element.GroupTransform is not null)
+        {
+            var transform = element.GroupTransform;
+            builder.AppendLine(
+                $"- Group child coordinates: offset=({transform.ChildOffsetX}, {transform.ChildOffsetY}), " +
+                $"extent=({transform.ChildExtentWidth}, {transform.ChildExtentHeight}), " +
+                $"rotation={Format(transform.RotationDegrees ?? 0d)}°, " +
+                $"flipH={transform.FlipHorizontal is true}, flipV={transform.FlipVertical is true}");
+        }
 
         if (element.Text is not null)
         {
@@ -228,6 +240,7 @@ public sealed class DeckContextMarkdownExporter
                     FormatFormula("name", series.NameFormula, series.NameWorkbookRangeId));
                 WriteDataSource(builder, "Categories", series.Categories);
                 WriteDataSource(builder, "Values", series.Values);
+                WriteDataSource(builder, "Bubble sizes", series.BubbleSizes);
             }
         }
 
@@ -338,7 +351,7 @@ public sealed class DeckContextMarkdownExporter
                 yield return diagnostic;
             }
 
-            foreach (var element in slide.Elements.OrderBy(element => element.ZOrder))
+            foreach (var element in slide.Elements.OrderBy(ElementOrderPath, ZOrderPathComparer.Instance))
             {
                 foreach (var diagnostic in element.Diagnostics)
                 {
@@ -355,6 +368,41 @@ public sealed class DeckContextMarkdownExporter
             .Replace("`", "'", StringComparison.Ordinal);
     }
 
+    private static IReadOnlyList<int> ElementOrderPath(SlideElementContext element) =>
+        element.ZOrderPath ?? [element.ZOrder];
+
+    private static string FormatDiagnosticSource(SourceReference? source)
+    {
+        if (source is null)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+
+        if (source.SlideIndex is not null)
+        {
+            parts.Add($"slide {source.SlideIndex.Value.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        if (source.ElementId is not null)
+        {
+            parts.Add($"object `{EscapeInline(source.ElementId)}`");
+        }
+
+        if (source.PartUri is not null)
+        {
+            parts.Add($"part `{EscapeInline(source.PartUri)}`");
+        }
+
+        if (source.RelationshipId is not null)
+        {
+            parts.Add($"relationship `{EscapeInline(source.RelationshipId)}`");
+        }
+
+        return parts.Count == 0 ? string.Empty : $", source: {string.Join(", ", parts)}";
+    }
+
     private static string EscapeTable(string? value)
     {
         return EscapeInline(value ?? string.Empty).Replace("|", "\\|", StringComparison.Ordinal);
@@ -368,5 +416,42 @@ public sealed class DeckContextMarkdownExporter
     private static string Normalize(StringBuilder builder)
     {
         return $"{builder.ToString().TrimEnd().Replace("\r\n", "\n", StringComparison.Ordinal)}\n";
+    }
+
+    private sealed class ZOrderPathComparer : IComparer<IReadOnlyList<int>>
+    {
+        public static ZOrderPathComparer Instance { get; } = new();
+
+        public int Compare(IReadOnlyList<int>? left, IReadOnlyList<int>? right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return 0;
+            }
+
+            if (left is null)
+            {
+                return -1;
+            }
+
+            if (right is null)
+            {
+                return 1;
+            }
+
+            var sharedLength = Math.Min(left.Count, right.Count);
+
+            for (var index = 0; index < sharedLength; index++)
+            {
+                var comparison = left[index].CompareTo(right[index]);
+
+                if (comparison != 0)
+                {
+                    return comparison;
+                }
+            }
+
+            return left.Count.CompareTo(right.Count);
+        }
     }
 }

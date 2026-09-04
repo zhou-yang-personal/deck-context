@@ -59,7 +59,11 @@
                    IsReadOnly="True"
                    Text="{Binding InputPath, Mode=OneWay}"
                    ToolTip="Drop a .pptx anywhere in this window" />
-          <Button Grid.Column="1" Margin="10,0,0,0" Click="SelectPowerPoint_Click" Content="Browse…" />
+          <Button Grid.Column="1"
+                  Margin="10,0,0,0"
+                  IsEnabled="{Binding CanChangePaths}"
+                  Click="SelectPowerPoint_Click"
+                  Content="Browse…" />
         </Grid>
 
         <TextBlock Margin="0,22,0,0" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Foreground="#334155" Text="OUTPUT FOLDER" />
@@ -69,7 +73,11 @@
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
           <TextBox Grid.Column="0" IsReadOnly="True" Text="{Binding OutputDirectory, Mode=OneWay}" />
-          <Button Grid.Column="1" Margin="10,0,0,0" Click="SelectOutput_Click" Content="Choose…" />
+          <Button Grid.Column="1"
+                  Margin="10,0,0,0"
+                  IsEnabled="{Binding CanChangePaths}"
+                  Click="SelectOutput_Click"
+                  Content="Choose…" />
         </Grid>
 
         <Border Margin="0,24,0,0" Padding="18" Background="White" BorderBrush="#D8DEE9" BorderThickness="1" CornerRadius="6">
