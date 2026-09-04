@@ -112,7 +112,9 @@ public sealed class DeckContextConversionServiceTests
         var chart = Assert.Single(result.Document.Slides[0].Elements, element => element.Chart is not null);
         Assert.Equal(ExtractionStatus.Partial, chart.Status);
         Assert.NotEmpty(chart.Chart!.Plots[0].Series[0].Values!.Points);
-        Assert.Empty(result.Assets.Where(asset => asset.Kind == ContextPackageAssetKind.EmbeddedWorkbook));
+        Assert.DoesNotContain(
+            result.Assets,
+            asset => asset.Kind == ContextPackageAssetKind.EmbeddedWorkbook);
 
         var markdown = await File.ReadAllTextAsync(result.MarkdownPath, TestContext.Current.CancellationToken);
         Assert.Contains("status `Partial`", markdown, StringComparison.Ordinal);
