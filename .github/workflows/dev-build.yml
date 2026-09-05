@@ -96,6 +96,69 @@ jobs:
             Measure-Object -Property Length -Sum).Sum
           Write-Host "Shared package size: $packageBytes bytes"
 
+      - name: Verify WPF main window startup
+        shell: pwsh
+        run: |
+          $applicationPath = Resolve-Path "artifacts/publish/DeckContext/DeckContext.exe"
+          $hostTracePath = Join-Path $env:RUNNER_TEMP "deckcontext-corehost-trace.log"
+          $applicationLogPath = Join-Path $env:LOCALAPPDATA "DeckContext/Logs/application-errors.log"
+          $env:COREHOST_TRACE = "1"
+          $env:COREHOST_TRACEFILE = $hostTracePath
+          $guiProcess = $null
+
+          try {
+            $guiProcess = Start-Process $applicationPath -PassThru
+            $deadline = [DateTime]::UtcNow.AddSeconds(20)
+            $windowReady = $false
+            $observedWindowTitle = ""
+
+            while ([DateTime]::UtcNow -lt $deadline) {
+              Start-Sleep -Milliseconds 500
+              $guiProcess.Refresh()
+
+              if ($guiProcess.HasExited) {
+                throw "DeckContext exited during startup with code $($guiProcess.ExitCode)."
+              }
+
+              if ($guiProcess.MainWindowHandle -ne 0) {
+                $observedWindowTitle = $guiProcess.MainWindowTitle
+
+                if ($observedWindowTitle -eq "DeckContext") {
+                  $windowReady = $true
+                  break
+                }
+              }
+            }
+
+            if (-not $windowReady) {
+              throw "DeckContext did not create its main window within 20 seconds. Observed title: '$observedWindowTitle'."
+            }
+
+            Write-Host "DeckContext main window started successfully."
+          }
+          catch {
+            if (Test-Path $hostTracePath -PathType Leaf) {
+              Write-Host "CoreHost trace:"
+              Get-Content $hostTracePath
+            }
+
+            if (Test-Path $applicationLogPath -PathType Leaf) {
+              Write-Host "Application error log:"
+              Get-Content $applicationLogPath
+            }
+
+            throw
+          }
+          finally {
+            if ($null -ne $guiProcess -and -not $guiProcess.HasExited) {
+              Stop-Process -Id $guiProcess.Id -Force
+              $guiProcess.WaitForExit()
+            }
+
+            Remove-Item Env:COREHOST_TRACE -ErrorAction SilentlyContinue
+            Remove-Item Env:COREHOST_TRACEFILE -ErrorAction SilentlyContinue
+          }
+
       - name: Resolve artifact identity
         id: artifact
         shell: pwsh

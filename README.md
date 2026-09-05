@@ -69,6 +69,8 @@ Download and unzip the latest `DeckContext-dev-win-x64-{short-sha}` artifact, th
 .\DeckContext\DeckContext.exe
 ```
 
+Extract the complete artifact before launching; the executable depends on the DLLs beside it. If managed application startup fails, DeckContext shows the error and writes details to `%LOCALAPPDATA%\DeckContext\Logs\application-errors.log`.
+
 Select or drop a `.pptx`, optionally choose an output folder, then select **Extract context**. The generated package contains:
 
 - `deck.context.md` — readable deck/slide/object context for humans and LLMs;
