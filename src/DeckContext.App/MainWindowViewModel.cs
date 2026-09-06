@@ -17,9 +17,9 @@ public sealed record DiagnosticDisplayItem(
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IDeckContextConversionService conversionService;
-    private string inputPath = string.Empty;
+    private IReadOnlyList<string> inputPaths = Array.Empty<string>();
     private string outputDirectory = string.Empty;
-    private string statusMessage = "Select or drop a PowerPoint file to begin.";
+    private string statusMessage = "Select or drop one or more PowerPoint files to begin.";
     private int progressPercentage;
     private bool isBusy;
     private bool hasCompleted;
@@ -32,11 +32,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string InputPath
+    public IReadOnlyList<string> InputPaths => inputPaths;
+
+    public string InputPath => inputPaths.FirstOrDefault() ?? string.Empty;
+
+    public string InputSummary => inputPaths.Count switch
     {
-        get => inputPath;
-        private set => SetField(ref inputPath, value);
-    }
+        0 => string.Empty,
+        1 => inputPaths[0],
+        _ => $"{inputPaths.Count} PowerPoint files selected"
+    };
+
+    public string SelectedFilesTooltip => inputPaths.Count == 0
+        ? "Drop one or more .pptx files anywhere in this window."
+        : string.Join(Environment.NewLine, inputPaths);
+
+    public bool IsBatch => inputPaths.Count > 1;
+
+    public string OutputFolderLabel => IsBatch ? "OUTPUT ROOT FOLDER" : "OUTPUT FOLDER";
+
+    public string ConvertButtonText => IsBatch
+        ? $"Extract {inputPaths.Count} presentations"
+        : "Extract context";
 
     public string OutputDirectory
     {
@@ -80,8 +97,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool CanConvert => !IsBusy && File.Exists(InputPath) &&
-        string.Equals(Path.GetExtension(InputPath), ".pptx", StringComparison.OrdinalIgnoreCase) &&
+    public bool CanConvert => !IsBusy && inputPaths.Count > 0 && inputPaths.All(path =>
+        File.Exists(path) &&
+        string.Equals(Path.GetExtension(path), ".pptx", StringComparison.OrdinalIgnoreCase)) &&
         !string.IsNullOrWhiteSpace(OutputDirectory);
 
     public bool CanOpenOutput => HasCompleted && Directory.Exists(OutputDirectory);
@@ -107,27 +125,50 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public ObservableCollection<DiagnosticDisplayItem> Diagnostics { get; } = [];
 
-    public void SetInputPath(string path)
+    public void SetInputPath(string path) => SetInputPaths([path]);
+
+    public void SetInputPaths(IEnumerable<string> paths)
     {
         if (IsBusy)
         {
             return;
         }
 
-        InputPath = path;
+        ArgumentNullException.ThrowIfNull(paths);
+        inputPaths = paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .Where(path => File.Exists(path) &&
+                           string.Equals(Path.GetExtension(path), ".pptx", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        OnPropertyChanged(nameof(InputPaths));
+        OnPropertyChanged(nameof(InputPath));
+        OnPropertyChanged(nameof(InputSummary));
+        OnPropertyChanged(nameof(SelectedFilesTooltip));
+        OnPropertyChanged(nameof(IsBatch));
+        OnPropertyChanged(nameof(OutputFolderLabel));
+        OnPropertyChanged(nameof(ConvertButtonText));
         HasCompleted = false;
         ProgressPercentage = 0;
         Diagnostics.Clear();
 
-        if (File.Exists(path) && string.Equals(Path.GetExtension(path), ".pptx", StringComparison.OrdinalIgnoreCase))
+        if (inputPaths.Count == 1)
         {
-            var parent = Path.GetDirectoryName(path) ?? Environment.CurrentDirectory;
-            OutputDirectory = Path.Combine(parent, $"{Path.GetFileNameWithoutExtension(path)}.deck-context");
+            var parent = Path.GetDirectoryName(inputPaths[0]) ?? Environment.CurrentDirectory;
+            OutputDirectory = Path.Combine(parent, $"{Path.GetFileNameWithoutExtension(inputPaths[0])}.deck-context");
             StatusMessage = "Ready to extract the presentation context.";
+        }
+        else if (inputPaths.Count > 1)
+        {
+            var parent = Path.GetDirectoryName(inputPaths[0]) ?? Environment.CurrentDirectory;
+            OutputDirectory = Path.Combine(parent, "DeckContext-batch-output");
+            StatusMessage = $"Ready to extract {inputPaths.Count} presentations in sequence.";
         }
         else
         {
-            StatusMessage = "Choose an existing .pptx file.";
+            OutputDirectory = string.Empty;
+            StatusMessage = "Choose one or more existing .pptx files.";
         }
 
         NotifyCommandState();
@@ -149,79 +190,178 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         if (!CanConvert)
         {
-            StatusMessage = "Choose a valid .pptx file and output folder first.";
+            StatusMessage = "Choose valid .pptx files and an output folder first.";
             return;
         }
 
-        var jobInputPath = InputPath;
+        var jobInputPaths = inputPaths.ToArray();
         var jobOutputDirectory = OutputDirectory;
+        var jobOutputDirectories = ResolveJobOutputDirectories(jobInputPaths, jobOutputDirectory);
         IsBusy = true;
         HasCompleted = false;
         ProgressPercentage = 0;
         Diagnostics.Clear();
         var acceptsProgress = 1;
+        var activeProgressJob = -1;
         TesseractImageTextProvider? imageTextProvider = null;
 
         try
         {
-            var progress = new Progress<ConversionProgress>(update =>
-            {
-                if (Volatile.Read(ref acceptsProgress) == 0)
-                {
-                    return;
-                }
-
-                ProgressPercentage = update.Percentage;
-                StatusMessage = update.Message;
-            });
-
             if (LocalOcrEnabled)
             {
                 imageTextProvider = new TesseractImageTextProvider();
             }
 
-            var result = await conversionService.ConvertAsync(
-                jobInputPath,
-                jobOutputDirectory,
-                progress,
-                cancellationToken,
-                new DeckContextConversionOptions(imageTextProvider));
+            var succeeded = 0;
+            var partial = 0;
+            var failed = 0;
+            var producedOutputs = 0;
+            string? lastFailureMessage = null;
+
+            for (var index = 0; index < jobInputPaths.Length; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var jobIndex = index;
+                var sourcePath = jobInputPaths[jobIndex];
+                Volatile.Write(ref activeProgressJob, jobIndex);
+                var progress = new Progress<ConversionProgress>(update =>
+                {
+                    if (Volatile.Read(ref acceptsProgress) == 0 ||
+                        Volatile.Read(ref activeProgressJob) != jobIndex)
+                    {
+                        return;
+                    }
+
+                    ProgressPercentage = Math.Clamp(
+                        (int)Math.Round(
+                            ((double)jobIndex + (double)update.Percentage / 100) /
+                            jobInputPaths.Length * 100,
+                            MidpointRounding.AwayFromZero),
+                        0,
+                        100);
+                    StatusMessage =
+                        $"{jobIndex + 1}/{jobInputPaths.Length} {Path.GetFileName(sourcePath)} — {update.Message}";
+                });
+
+                try
+                {
+                    var result = await conversionService.ConvertAsync(
+                        sourcePath,
+                        jobOutputDirectories[jobIndex],
+                        progress,
+                        cancellationToken,
+                        new DeckContextConversionOptions(imageTextProvider));
+                    producedOutputs++;
+
+                    switch (result.Document.Status)
+                    {
+                        case ExtractionStatus.Succeeded:
+                            succeeded++;
+                            break;
+                        case ExtractionStatus.Partial:
+                            partial++;
+                            break;
+                        default:
+                            failed++;
+                            break;
+                    }
+
+                    AddDiagnostics(result.Document);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    failed++;
+                    lastFailureMessage = exception.Message;
+                    Diagnostics.Add(new DiagnosticDisplayItem(
+                        "Error",
+                        jobInputPaths.Length == 1 ? "APP-CONVERT" : "APP-BATCH-CONVERT",
+                        exception.Message,
+                        Path.GetFileName(sourcePath)));
+                }
+                finally
+                {
+                    Volatile.Write(ref activeProgressJob, -1);
+                }
+
+                ProgressPercentage = (jobIndex + 1) * 100 / jobInputPaths.Length;
+            }
+
             Interlocked.Exchange(ref acceptsProgress, 0);
             ProgressPercentage = 100;
-            HasCompleted = true;
-            StatusMessage = result.Document.Status switch
-            {
-                ExtractionStatus.Succeeded => "Extraction completed successfully.",
-                ExtractionStatus.Partial => "Extraction completed with recoverable diagnostics.",
-                _ => "Extraction finished, but the presentation could not be fully processed."
-            };
-
-            foreach (var diagnostic in result.Document.Diagnostics
-                         .Concat(result.Document.Slides.SelectMany(slide => slide.Diagnostics))
-                         .Concat(result.Document.Slides.SelectMany(slide => slide.Elements).SelectMany(element => element.Diagnostics)))
-            {
-                Diagnostics.Add(new DiagnosticDisplayItem(
-                    diagnostic.Severity.ToString(),
-                    diagnostic.Code,
-                    diagnostic.Message,
-                    FormatLocation(diagnostic.Source)));
-            }
+            HasCompleted = producedOutputs > 0;
+            StatusMessage = jobInputPaths.Length == 1
+                ? SingleJobStatus(succeeded, partial, lastFailureMessage)
+                : $"Batch extraction completed: {succeeded} succeeded, {partial} partial, {failed} failed.";
         }
         catch (OperationCanceledException)
         {
             StatusMessage = "Extraction was cancelled.";
         }
-        catch (Exception exception)
-        {
-            StatusMessage = $"Extraction failed: {exception.Message}";
-            Diagnostics.Add(new DiagnosticDisplayItem("Error", "APP-CONVERT", exception.Message, "Application"));
-        }
         finally
         {
             imageTextProvider?.Dispose();
+            Volatile.Write(ref activeProgressJob, -1);
             Interlocked.Exchange(ref acceptsProgress, 0);
             IsBusy = false;
         }
+    }
+
+    private void AddDiagnostics(DeckContextDocument document)
+    {
+        foreach (var diagnostic in document.Diagnostics
+                     .Concat(document.Slides.SelectMany(slide => slide.Diagnostics))
+                     .Concat(document.Slides.SelectMany(slide => slide.Elements)
+                         .SelectMany(element => element.Diagnostics)))
+        {
+            Diagnostics.Add(new DiagnosticDisplayItem(
+                diagnostic.Severity.ToString(),
+                diagnostic.Code,
+                diagnostic.Message,
+                FormatLocation(diagnostic.Source)));
+        }
+    }
+
+    private static string SingleJobStatus(int succeeded, int partial, string? failureMessage) =>
+        (succeeded, partial) switch
+        {
+            (1, _) => "Extraction completed successfully.",
+            (_, 1) => "Extraction completed with recoverable diagnostics.",
+            _ when !string.IsNullOrWhiteSpace(failureMessage) => $"Extraction failed: {failureMessage}",
+            _ => "Extraction finished, but the presentation could not be fully processed."
+        };
+
+    private static IReadOnlyList<string> ResolveJobOutputDirectories(
+        IReadOnlyList<string> sourcePaths,
+        string outputDirectory)
+    {
+        if (sourcePaths.Count == 1)
+        {
+            return [outputDirectory];
+        }
+
+        var results = new List<string>(sourcePaths.Count);
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var sourcePath in sourcePaths)
+        {
+            var stem = Path.GetFileNameWithoutExtension(sourcePath);
+            var suffix = 1;
+            var directoryName = $"{stem}.deck-context";
+
+            while (!usedNames.Add(directoryName))
+            {
+                suffix++;
+                directoryName = $"{stem}-{suffix}.deck-context";
+            }
+
+            results.Add(Path.Combine(outputDirectory, directoryName));
+        }
+
+        return results;
     }
 
     private void NotifyCommandState()
@@ -230,6 +370,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanOpenOutput));
         OnPropertyChanged(nameof(CanChangePaths));
         OnPropertyChanged(nameof(LocalOcrEnabled));
+        OnPropertyChanged(nameof(ConvertButtonText));
     }
 
     private static string FormatLocation(SourceReference? source)
@@ -239,7 +380,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return "Deck";
         }
 
-        var parts = new List<string>();
+        var parts = new List<string> { Path.GetFileName(source.SourceFileName) };
 
         if (source.SlideIndex is not null)
         {
@@ -261,7 +402,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             parts.Add($"relationship {source.RelationshipId}");
         }
 
-        return parts.Count == 0 ? source.SourceFileName : string.Join(" · ", parts);
+        return string.Join(" · ", parts);
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

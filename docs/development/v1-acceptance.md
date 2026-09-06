@@ -4,7 +4,7 @@ Status: Automated implementation complete; manual Gates A/B/C pending
 
 Target: the commit-matched, self-contained Windows artifact from the `dev` workflow
 
-This checklist intentionally combines the three manual gates. One representative real presentation and one packaged application run should provide the remaining evidence without interrupting development phase by phase.
+This checklist intentionally combines the three manual gates. A small representative deck set and one packaged application run should provide the remaining evidence without interrupting development phase by phase.
 
 ## Automated evidence
 
@@ -23,6 +23,7 @@ This checklist intentionally combines the three manual gates. One representative
 | 11. Report unsupported objects | Unsupported chart and diagnostic-report tests assert scoped codes, severity, extractor, outcome, and provenance. |
 | 12. Degrade one object without losing the deck | Malformed workbook and missing relationship tests assert partial object/deck status while retaining usable cached/native data. |
 | 13. Produce genuinely readable LLM input | Markdown tests cover semantic title selection, concise extraction summaries, readable text/tables/charts, compact workbook references, formatted values, image interpretations, and condensed diagnostics; the complete trace remains in JSON. Final qualitative confirmation is manual. |
+| 14. Process multiple decks safely | View-model tests assert ordered sequential processing, isolated per-deck output directories, deterministic duplicate-name suffixes, aggregate completion status, and continuation after one deck fails. |
 
 The Windows workflow downloads checksum-pinned OCR models/test data, restores, builds, runs an actual Tesseract recognition smoke test, and publishes the WPF application and verification command into one self-contained directory with a shared .NET runtime. CI checks both entry points, the local OCR native libraries, language models, app-local Visual C++ runtime files, and runtime configuration; it also confirms only one CoreCLR is packaged and the verification command starts. The complete-package tests re-run a fixture twice and compare Markdown, JSON, report, and manifest byte-for-byte, verify every manifest asset's size and SHA-256, replace an intact prior package without stale assets, and refuse to overwrite unrelated files.
 
@@ -38,11 +39,13 @@ The conversion session opens the PPTX once, captures immutable workbook/image as
 4. Confirm the proposed output directory is sensible; use **Choose…** to test an alternate writable folder.
 5. Select **Extract context**. Confirm progress/status changes, the window remains responsive, and diagnostics are visible rather than hidden.
 6. Select **Open output folder** and confirm these files exist and open: `deck.context.md`, `deck.context.json`, `extraction-report.json`, and `manifest.json`.
-7. Confirm the five native charts retain chart type, series, categories, values, formulas/ranges, and chart-to-workbook linkage. Open exported `workbooks\*.xlsx` files and spot-check them against the presentation.
-8. Leave **Recognize text inside images with offline OCR** enabled. Confirm screenshots with Chinese/English/Spanish text produce recognized text with `tesseract-local` provenance, nothing requests credentials or network access, repeated equal image/crop placements emit their transcription only once in Markdown, and an unreadable/unsupported image does not erase other slide content. Confirm Logo/icon/photo/map noise is omitted from Markdown with its bounded raw OCR and quality assessment retained in JSON. Disable OCR once and confirm images remain preserved with an explicit not-analyzed notice.
-9. Confirm every unsupported/partial item appears in `extraction-report.json` with a useful code, severity, extractor, outcome, and source location; a local failure must not erase unaffected slides or objects.
-10. Re-run the same deck into a fresh directory and compare the four primary text/JSON files. They should be byte-identical.
-11. Give `deck.context.md` (and, when deeper traceability is needed, `deck.context.json`) to an LLM. Confirm it can identify slide structure, inspect table/chart data, read local-OCR transcriptions, distinguish OCR-derived text from native evidence, and use JSON when object-level geometry or provenance is needed.
+7. Select or drop at least two `.pptx` files together; confirm the UI shows the selected count, processes them sequentially, and creates one `{file-name}.deck-context` child folder per deck under the output root.
+8. Include two source files with the same file name from different folders; confirm the second output uses a deterministic `-2.deck-context` suffix and does not overwrite the first.
+9. Confirm the five native charts retain chart type, series, categories, values, formulas/ranges, and chart-to-workbook linkage. Open exported `workbooks\*.xlsx` files and spot-check them against the presentation.
+10. Leave **Recognize text inside images with offline OCR** enabled. Confirm screenshots with Chinese/English/Spanish text produce recognized text with `tesseract-local` provenance, nothing requests credentials or network access, repeated equal image/crop placements emit their transcription only once in Markdown, and an unreadable/unsupported image does not erase other slide content. Confirm Logo/icon/photo/map noise is omitted from Markdown with its bounded raw OCR and quality assessment retained in JSON. Disable OCR once and confirm images remain preserved with an explicit not-analyzed notice.
+11. Confirm every unsupported/partial item appears in `extraction-report.json` with a useful code, severity, extractor, outcome, and source location; a local failure must not erase unaffected slides or objects.
+12. Re-run the same deck into a fresh directory and compare the four primary text/JSON files. They should be byte-identical.
+13. Give `deck.context.md` (and, when deeper traceability is needed, `deck.context.json`) to an LLM. Confirm it can identify slide structure, inspect table/chart data, read local-OCR transcriptions, distinguish OCR-derived text from native evidence, and use JSON when object-level geometry or provenance is needed.
 
 ## Acceptance record
 

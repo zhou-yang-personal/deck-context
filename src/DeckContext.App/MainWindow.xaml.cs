@@ -21,15 +21,15 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Select a PowerPoint presentation",
+            Title = "Select one or more PowerPoint presentations",
             Filter = "PowerPoint presentations (*.pptx)|*.pptx",
             CheckFileExists = true,
-            Multiselect = false
+            Multiselect = true
         };
 
         if (dialog.ShowDialog(this) == true)
         {
-            viewModel.SetInputPath(dialog.FileName);
+            viewModel.SetInputPaths(dialog.FileNames);
         }
     }
 
@@ -73,7 +73,7 @@ public partial class MainWindow : Window
 
     private void Window_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = viewModel.CanChangePaths && TryGetPowerPointPath(e.Data, out _)
+        e.Effects = viewModel.CanChangePaths && TryGetPowerPointPaths(e.Data, out _)
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         e.Handled = true;
@@ -81,22 +81,25 @@ public partial class MainWindow : Window
 
     private void Window_Drop(object sender, DragEventArgs e)
     {
-        if (viewModel.CanChangePaths && TryGetPowerPointPath(e.Data, out var path))
+        if (viewModel.CanChangePaths && TryGetPowerPointPaths(e.Data, out var paths))
         {
-            viewModel.SetInputPath(path);
+            viewModel.SetInputPaths(paths);
         }
     }
 
-    private static bool TryGetPowerPointPath(IDataObject data, out string path)
+    private static bool TryGetPowerPointPaths(IDataObject data, out string[] paths)
     {
-        path = string.Empty;
+        paths = [];
         if (!data.GetDataPresent(DataFormats.FileDrop) || data.GetData(DataFormats.FileDrop) is not string[] files)
         {
             return false;
         }
 
-        path = files.FirstOrDefault(file =>
-            string.Equals(Path.GetExtension(file), ".pptx", StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
-        return path.Length > 0;
+        paths = files
+            .Where(file => File.Exists(file) &&
+                           string.Equals(Path.GetExtension(file), ".pptx", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return paths.Length > 0;
     }
 }

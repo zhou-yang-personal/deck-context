@@ -74,9 +74,9 @@ Download and unzip the latest `DeckContext-dev-win-x64-{short-sha}` artifact, th
 
 Extract the complete artifact before launching; the executable depends on the DLLs beside it. If managed application startup fails, DeckContext shows the error and writes details to `%LOCALAPPDATA%\DeckContext\Logs\application-errors.log`.
 
-The current desktop workflow processes one PowerPoint file at a time; the verification command likewise processes one input file per invocation. A batch queue is not part of the current V1 implementation.
+The desktop workflow accepts one or more PowerPoint files. Batch inputs are processed sequentially and each deck is published into its own `{file-name}.deck-context` folder under the selected output root. One failed deck is reported without stopping the remaining queue. The verification command continues to process one input file per invocation.
 
-Select or drop a `.pptx`, optionally choose an output folder, then select **Extract context**. The generated package contains:
+Select or drop one or more `.pptx` files, optionally choose an output folder, then select **Extract context**. A single selection keeps the original direct-package output behavior; a multiple selection uses the chosen folder as the batch output root. Each generated package contains:
 
 - `deck.context.md` — readable deck/slide/object context for humans and LLMs;
 - `deck.context.json` — the complete normalized intermediate representation;
@@ -101,7 +101,7 @@ Automation also enables bundled offline OCR by default. Use `--no-ocr` for a fas
 .\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output" --no-ocr
 ```
 
-Both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project concise Markdown, complete JSON, diagnostics, manifest, and assets from that result. Duplicate image placements with the same image hash and crop are analyzed once. Without a provider, images are still preserved and the output records one explicit deck-level notice that pixel content was not analyzed.
+For each deck, both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project concise Markdown, complete JSON, diagnostics, manifest, and assets from that result. Duplicate image placements with the same image hash and crop are analyzed once. Without a provider, images are still preserved and the output records one explicit deck-level notice that pixel content was not analyzed.
 
 ## Branch Strategy
 

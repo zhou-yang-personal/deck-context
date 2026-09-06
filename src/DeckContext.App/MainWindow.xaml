@@ -49,7 +49,7 @@
 
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="32,24">
-        <TextBlock FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Foreground="#334155" Text="SOURCE POWERPOINT" />
+        <TextBlock FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Foreground="#334155" Text="SOURCE POWERPOINT(S)" />
         <Grid Margin="0,8,0,0">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -57,8 +57,8 @@
           </Grid.ColumnDefinitions>
           <TextBox Grid.Column="0"
                    IsReadOnly="True"
-                   Text="{Binding InputPath, Mode=OneWay}"
-                   ToolTip="Drop a .pptx anywhere in this window" />
+                   Text="{Binding InputSummary, Mode=OneWay}"
+                   ToolTip="{Binding SelectedFilesTooltip}" />
           <Button Grid.Column="1"
                   Margin="10,0,0,0"
                   IsEnabled="{Binding CanChangePaths}"
@@ -66,7 +66,12 @@
                   Content="Browse…" />
         </Grid>
 
-        <TextBlock Margin="0,22,0,0" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Foreground="#334155" Text="OUTPUT FOLDER" />
+        <TextBlock Margin="0,22,0,0"
+                   FontFamily="Segoe UI"
+                   FontSize="13"
+                   FontWeight="SemiBold"
+                   Foreground="#334155"
+                   Text="{Binding OutputFolderLabel}" />
         <Grid Margin="0,8,0,0">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -157,7 +162,7 @@
                 IsDefault="True"
                 IsEnabled="{Binding CanConvert}"
                 Click="Convert_Click"
-                Content="Extract context" />
+                Content="{Binding ConvertButtonText}" />
       </DockPanel>
     </Border>
   </Grid>

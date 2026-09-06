@@ -28,13 +28,16 @@ The primary use case is supplying historical PPT material to ChatGPT or another 
 
 ## 3. Primary user flow
 
-1. User selects or drags a `.pptx` file into the Windows desktop application.
-2. DeckContext parses the PPTX package and relationships.
-3. DeckContext extracts supported slide objects and source data.
-4. DeckContext builds a normalized intermediate representation (IR).
-5. DeckContext generates human/LLM-readable Markdown and machine-readable JSON from the same IR.
-6. DeckContext reports unsupported, partial, or failed extraction items explicitly.
-7. User exports/opens the generated context package and supplies the relevant material to an LLM.
+1. User selects or drags one or more `.pptx` files into the Windows desktop application.
+2. DeckContext processes each selected PPTX sequentially through the same single-deck extraction pipeline.
+3. DeckContext parses each PPTX package and relationships.
+4. DeckContext extracts supported slide objects and source data.
+5. DeckContext builds a normalized intermediate representation (IR) per deck.
+6. DeckContext generates human/LLM-readable Markdown and machine-readable JSON from the same IR.
+7. DeckContext reports unsupported, partial, or failed extraction items explicitly; a failed deck does not stop later files in the batch.
+8. User exports/opens the generated context package or batch output root and supplies the relevant material to an LLM.
+
+For a single selection, the output remains one directly selected context-package directory. For multiple selections, each source deck is published into an independent `{file-name}.deck-context` directory beneath a selected batch output root. Duplicate source file names receive deterministic numeric suffixes. Batch processing does not introduce accounts, projects, persistent queues, or concurrent OCR execution.
 
 ## 4. Required information domains
 
