@@ -226,6 +226,8 @@ V1 includes image text recognition through the existing provider boundary and sh
 - PowerPoint crop metadata limits the pixel region submitted to OCR where it yields a valid region;
 - duplicate placements are analyzed once per unique image hash and crop;
 - recognized text, OCR metadata, provider identity, and failure status remain distinguishable from native OOXML evidence;
+- OCR results carry a confidence/structure quality assessment; low-quality text stays out of Markdown while a bounded raw result and suppression reason remain in JSON;
+- repeated placements of the same image and crop do not repeat the same OCR transcription throughout Markdown;
 - text-free images are reported as having no readable text rather than treated as failures;
 - an OCR engine/model/format failure degrades the affected image/object without discarding other extraction results;
 - with OCR disabled or no provider supplied, DeckContext continues to extract/reference images and reports that pixel content was not analyzed.

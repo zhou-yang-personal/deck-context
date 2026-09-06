@@ -31,5 +31,5 @@ public sealed record DeckContextDocument(
     ExtractionStatus Status,
     IReadOnlyList<ExtractionDiagnostic> Diagnostics)
 {
-    public const string CurrentSchemaVersion = "0.2";
+    public const string CurrentSchemaVersion = "0.3";
 }

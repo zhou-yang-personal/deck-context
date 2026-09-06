@@ -32,7 +32,7 @@ public sealed class DeckContextJsonSerializerTests
 
         using var json = JsonDocument.Parse(first);
         var root = json.RootElement;
-        Assert.Equal("0.2", root.GetProperty("schemaVersion").GetString());
+        Assert.Equal("0.3", root.GetProperty("schemaVersion").GetString());
         Assert.Equal("sample.pptx", root.GetProperty("deck").GetProperty("sourceFileName").GetString());
         Assert.Equal("succeeded", root.GetProperty("status").GetString());
         Assert.Equal(1, root.GetProperty("slides").GetArrayLength());
@@ -187,5 +187,46 @@ public sealed class DeckContextJsonSerializerTests
             .GetProperty("status")
             .GetString());
         Assert.False(serializedImage.GetProperty("interpretation").TryGetProperty("text", out _));
+    }
+
+    [Fact]
+    public void Serialize_preserves_filtered_raw_ocr_and_its_quality_assessment()
+    {
+        var document = TestDocumentFactory.CreateRich();
+        var slide = document.Slides[0];
+        var imageElement = slide.Elements.Single(element => element.Image is not null);
+        var filteredInterpretation = new ImageContentInterpretationContext(
+            ImageContentInterpretationStatus.Succeeded,
+            "tesseract-local:chi_sim+eng+spa",
+            "A / y / | / NN",
+            "Low-quality OCR text was retained only in JSON.",
+            new ImageTextAssessmentContext(
+                0.47,
+                ImageTextQuality.Low,
+                false,
+                "Mean OCR confidence was below 50%.",
+                false));
+        var updatedImageElement = imageElement with
+        {
+            Image = imageElement.Image! with { Interpretation = filteredInterpretation }
+        };
+        var updatedElements = slide.Elements
+            .Select(element => element == imageElement ? updatedImageElement : element)
+            .ToArray();
+
+        var jsonText = new DeckContextJsonSerializer().Serialize(
+            document with { Slides = [slide with { Elements = updatedElements }] });
+
+        using var json = JsonDocument.Parse(jsonText);
+        var interpretation = json.RootElement
+            .GetProperty("slides")[0]
+            .GetProperty("elements")
+            .EnumerateArray()
+            .Single(element => element.TryGetProperty("image", out _))
+            .GetProperty("image")
+            .GetProperty("interpretation");
+        Assert.Equal("A / y / | / NN", interpretation.GetProperty("text").GetString());
+        Assert.Equal("low", interpretation.GetProperty("textAssessment").GetProperty("quality").GetString());
+        Assert.False(interpretation.GetProperty("textAssessment").GetProperty("includeInMarkdown").GetBoolean());
     }
 }

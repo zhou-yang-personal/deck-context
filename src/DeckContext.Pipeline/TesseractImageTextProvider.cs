@@ -51,16 +51,19 @@ public sealed class TesseractImageTextProvider : IImageTextProvider, IDisposable
                 using var page = ocrEngine.Process(image, region, PageSegMode.SparseText);
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var text = NormalizeText(page.Text);
-                var description = text is null
+                var evaluation = OcrTextQualityEvaluator.Evaluate(page.Text, page.MeanConfidence);
+                var description = evaluation.StoredText is null
                     ? $"No readable text was detected by offline OCR ({languages})."
-                    : $"Offline OCR ({languages}); mean confidence {page.MeanConfidence * 100:0.#}%.";
+                    : evaluation.Assessment.IncludeInMarkdown
+                        ? $"Offline OCR ({languages}); text passed the Markdown quality filter."
+                        : $"Offline OCR ({languages}); low-quality text was retained only in JSON.";
 
                 return Task.FromResult(new ImageContentInterpretationContext(
                     ImageContentInterpretationStatus.Succeeded,
                     ProviderId,
-                    text,
-                    description));
+                    evaluation.StoredText,
+                    description,
+                    evaluation.Assessment));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -152,22 +155,6 @@ public sealed class TesseractImageTextProvider : IImageTextProvider, IDisposable
     }
 
     private static double ClampCrop(double fraction) => Math.Clamp(fraction, 0, 1);
-
-    private static string? NormalizeText(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var lines = value
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
-            .Split('\n')
-            .Select(line => line.TrimEnd())
-            .ToArray();
-        return string.Join(Environment.NewLine, lines).Trim();
-    }
 
     private ImageContentInterpretationContext Failed(string message) =>
         new(ImageContentInterpretationStatus.Failed, ProviderId, null, message);

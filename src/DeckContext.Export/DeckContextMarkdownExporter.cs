@@ -7,6 +7,8 @@ namespace DeckContext.Export;
 
 public sealed class DeckContextMarkdownExporter
 {
+    private const int MaximumMarkdownOcrCharacters = 2000;
+
     public string Serialize(DeckContextDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -19,9 +21,10 @@ public sealed class DeckContextMarkdownExporter
         builder.AppendLine($"- Schema: `{document.SchemaVersion}`");
         WriteExtractionSummary(builder, document);
 
+        var emittedImageInterpretations = new HashSet<string>(StringComparer.Ordinal);
         foreach (var slide in document.Slides.OrderBy(slide => slide.Metadata.Index))
         {
-            WriteSlide(builder, slide);
+            WriteSlide(builder, slide, emittedImageInterpretations);
         }
 
         var diagnostics = EnumerateDiagnostics(document).ToArray();
@@ -64,7 +67,10 @@ public sealed class DeckContextMarkdownExporter
         return Normalize(builder);
     }
 
-    private static void WriteSlide(StringBuilder builder, SlideContext slide)
+    private static void WriteSlide(
+        StringBuilder builder,
+        SlideContext slide,
+        ISet<string> emittedImageInterpretations)
     {
         builder.AppendLine();
         builder.AppendLine($"## Slide {slide.Metadata.Index}");
@@ -96,11 +102,14 @@ public sealed class DeckContextMarkdownExporter
 
         foreach (var element in visibleElements)
         {
-            WriteElement(builder, element);
+            WriteElement(builder, element, emittedImageInterpretations);
         }
     }
 
-    private static void WriteElement(StringBuilder builder, SlideElementContext element)
+    private static void WriteElement(
+        StringBuilder builder,
+        SlideElementContext element,
+        ISet<string> emittedImageInterpretations)
     {
         builder.AppendLine();
         var orderLabel = string.Join(".", ElementOrderPath(element).Select(position => position + 1));
@@ -130,7 +139,7 @@ public sealed class DeckContextMarkdownExporter
 
         if (element.Image is not null)
         {
-            WriteImage(builder, element.Image);
+            WriteImage(builder, element.Image, emittedImageInterpretations);
         }
     }
 
@@ -263,7 +272,10 @@ public sealed class DeckContextMarkdownExporter
             FormatFormula(null, source.Formula, source.WorkbookRangeId));
     }
 
-    private static void WriteImage(StringBuilder builder, ImageContext image)
+    private static void WriteImage(
+        StringBuilder builder,
+        ImageContext image,
+        ISet<string> emittedImageInterpretations)
     {
         builder.AppendLine(
             $"- Image media: `{image.PartUri ?? image.ExternalUri ?? "unresolved"}`; " +
@@ -281,6 +293,12 @@ public sealed class DeckContextMarkdownExporter
 
         if (image.Interpretation.Status == ImageContentInterpretationStatus.Succeeded)
         {
+            if (IsTesseract(image.Interpretation.ProviderId))
+            {
+                WriteOcrInterpretation(builder, image, emittedImageInterpretations);
+                return;
+            }
+
             builder.AppendLine($"- Pixel interpretation provider: `{image.Interpretation.ProviderId}`");
 
             if (!string.IsNullOrWhiteSpace(image.Interpretation.Text))
@@ -307,6 +325,74 @@ public sealed class DeckContextMarkdownExporter
         }
     }
 
+    private static void WriteOcrInterpretation(
+        StringBuilder builder,
+        ImageContext image,
+        ISet<string> emittedImageInterpretations)
+    {
+        var interpretation = image.Interpretation;
+        var assessment = interpretation.TextAssessment;
+        builder.AppendLine($"- OCR provider: `{interpretation.ProviderId}`");
+
+        if (assessment is not null)
+        {
+            builder.AppendLine(
+                $"- OCR quality: `{assessment.Quality}`; mean confidence " +
+                (assessment.MeanConfidence is null
+                    ? "unknown"
+                    : $"{assessment.MeanConfidence.Value * 100:0.#}%"));
+        }
+
+        if (string.IsNullOrWhiteSpace(interpretation.Text))
+        {
+            builder.AppendLine("- OCR result: no reliable text detected.");
+            return;
+        }
+
+        if (assessment is { IncludeInMarkdown: false })
+        {
+            builder.AppendLine(
+                "- OCR result: low-quality text omitted from Markdown; " +
+                "the bounded raw OCR result remains in `deck.context.json`." +
+                (string.IsNullOrWhiteSpace(assessment.Reason)
+                    ? string.Empty
+                    : $" Reason: {EscapeInline(assessment.Reason)}"));
+            return;
+        }
+
+        var interpretationKey = ImageInterpretationKey(image);
+        if (!emittedImageInterpretations.Add(interpretationKey))
+        {
+            builder.AppendLine("- OCR result: same image and crop as an earlier placement; transcription omitted here.");
+            return;
+        }
+
+        var markdownText = interpretation.Text;
+        var truncatedForMarkdown = markdownText.Length > MaximumMarkdownOcrCharacters;
+        if (truncatedForMarkdown)
+        {
+            markdownText = $"{markdownText[..MaximumMarkdownOcrCharacters].TrimEnd()}…";
+        }
+
+        builder.AppendLine(truncatedForMarkdown
+            ? "- Recognized text (truncated for Markdown; fuller OCR is in `deck.context.json`):"
+            : "- Recognized text:");
+        builder.AppendLine($"  {EscapeInline(markdownText)}");
+    }
+
+    private static bool IsTesseract(string? providerId) =>
+        providerId?.StartsWith("tesseract-local:", StringComparison.Ordinal) == true;
+
+    private static string ImageInterpretationKey(ImageContext image)
+    {
+        var identity = image.Sha256 ?? image.PartUri ?? image.ExternalUri ?? image.SuggestedFileName ?? "unresolved";
+        return image.Crop is null
+            ? identity
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"{identity}:{image.Crop.LeftRaw}:{image.Crop.TopRaw}:{image.Crop.RightRaw}:{image.Crop.BottomRaw}");
+    }
+
     private static void WriteExtractionSummary(StringBuilder builder, DeckContextDocument document)
     {
         var elements = document.Slides.SelectMany(slide => slide.Elements).ToArray();
@@ -315,15 +401,20 @@ public sealed class DeckContextMarkdownExporter
         var failedSlides = document.Slides.Count(slide =>
             slide.Status == DeckContext.Domain.Extraction.ExtractionStatus.Failed);
         var imageElements = elements.Where(element => element.Image is not null).ToArray();
-        var interpretedImages = imageElements.Count(element =>
+        var analyzedImages = imageElements.Count(element =>
             element.Image!.Interpretation.Status == ImageContentInterpretationStatus.Succeeded);
+        var usableTextImages = imageElements.Count(element =>
+            element.Image!.Interpretation.Status == ImageContentInterpretationStatus.Succeeded &&
+            !string.IsNullOrWhiteSpace(element.Image.Interpretation.Text) &&
+            element.Image.Interpretation.TextAssessment?.IncludeInMarkdown != false);
 
         builder.AppendLine(
             $"- Summary: {document.Slides.Count - partialSlides - failedSlides} succeeded, " +
             $"{partialSlides} partial, {failedSlides} failed slide(s); " +
             $"{elements.Count(element => element.Chart is not null)} chart(s); " +
             $"{elements.Count(element => element.Table is not null)} table(s); " +
-            $"{imageElements.Length} image placement(s), {interpretedImages} interpreted");
+            $"{imageElements.Length} image placement(s), {analyzedImages} analyzed, " +
+            $"{usableTextImages} with usable text");
     }
 
     private static string? SelectTitle(SlideContext slide)

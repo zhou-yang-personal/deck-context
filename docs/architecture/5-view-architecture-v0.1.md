@@ -673,4 +673,4 @@ Derived semantics 必须基于 source facts 或明确 Provider 输出，不得�
 
 PPT 中作为图片存在的套餐截图、地图、图表截图等，需要像素识别才能把其中的文字纳入纯文本 LLM 输入。V1 的落地方式是：核心解析器先可靠识别、提取和引用图片；Tesseract local provider 再对唯一的 image-hash + crop 输入执行中文、英文、西班牙文 OCR。
 
-Provider 输出带有明确来源，不替代图片对象和 OOXML provenance。未配置 Provider 时继续输出 NotAnalyzed；OCR 初始化、格式或单图处理失败时仅将对应 image element 标为 Partial 并写入诊断。Tesseract 结果只表示可见文字转录，不提供图片整体含义、图表关系或地图语义。
+Provider 输出带有明确来源，不替代图片对象和 OOXML provenance。未配置 Provider 时继续输出 NotAnalyzed；OCR 初始化、格式或单图处理失败时仅将对应 image element 标为 Partial 并写入诊断。Tesseract 结果只表示可见文字转录，不提供图片整体含义、图表关系或地图语义。Local OCR 输出经过置信度、有效字符比例、连续文本结构和碎片化程度的组合质量门槛；低质量原文限长保留在 JSON 并记录抑制原因，不进入面向 LLM 的 Markdown。相同 image-hash + crop 的可用转写在 Markdown 中仅输出一次。

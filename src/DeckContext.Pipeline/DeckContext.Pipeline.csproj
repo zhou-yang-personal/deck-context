@@ -8,6 +8,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>DeckContext.OpenXml.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DeckContext.Application\DeckContext.Application.csproj" />
     <ProjectReference Include="..\DeckContext.Domain\DeckContext.Domain.csproj" />
     <ProjectReference Include="..\DeckContext.Export\DeckContext.Export.csproj" />

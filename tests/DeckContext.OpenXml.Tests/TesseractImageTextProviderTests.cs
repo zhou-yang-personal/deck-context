@@ -37,6 +37,9 @@ public sealed class TesseractImageTextProviderTests
         Assert.Equal(ImageContentInterpretationStatus.Succeeded, result.Status);
         Assert.Contains("This is a lot of 12 point text", result.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Offline OCR", result.Description, StringComparison.Ordinal);
+        var assessment = Assert.IsType<ImageTextAssessmentContext>(result.TextAssessment);
+        Assert.True(assessment.IncludeInMarkdown);
+        Assert.True(assessment.MeanConfidence > 0);
     }
 
     private static ImageTextRequest Request(byte[] content) =>

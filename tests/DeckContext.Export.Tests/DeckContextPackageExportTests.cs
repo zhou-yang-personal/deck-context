@@ -124,6 +124,80 @@ public sealed class DeckContextPackageExportTests
     }
 
     [Fact]
+    public void Markdown_omits_low_quality_ocr_but_reports_analyzed_and_usable_counts()
+    {
+        var document = TestDocumentFactory.CreateRich();
+        var slide = document.Slides[0];
+        var imageElement = slide.Elements.Single(element => element.Image is not null);
+        var interpretation = new ImageContentInterpretationContext(
+            ImageContentInterpretationStatus.Succeeded,
+            "tesseract-local:chi_sim+eng+spa",
+            "A / y / | / NN",
+            "Low-quality OCR text was retained only in JSON.",
+            new ImageTextAssessmentContext(
+                0.47,
+                ImageTextQuality.Low,
+                false,
+                "Mean OCR confidence was below 50%.",
+                false));
+        var updatedElements = slide.Elements
+            .Select(element => element == imageElement
+                ? element with { Image = element.Image! with { Interpretation = interpretation } }
+                : element)
+            .ToArray();
+
+        var markdown = new DeckContextMarkdownExporter().Serialize(
+            document with { Slides = [slide with { Elements = updatedElements }] });
+
+        Assert.Contains("1 image placement(s), 1 analyzed, 0 with usable text", markdown, StringComparison.Ordinal);
+        Assert.Contains("low-quality text omitted from Markdown", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("A / y / | / NN", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Visual description", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Markdown_emits_reused_ocr_transcription_only_once()
+    {
+        var document = TestDocumentFactory.CreateRich();
+        var slide = document.Slides[0];
+        var imageElement = slide.Elements.Single(element => element.Image is not null);
+        var interpretation = new ImageContentInterpretationContext(
+            ImageContentInterpretationStatus.Succeeded,
+            "tesseract-local:chi_sim+eng+spa",
+            "Internet Fibra 850 Mbps Precio regular 119",
+            "OCR text passed the Markdown quality filter.",
+            new ImageTextAssessmentContext(0.91, ImageTextQuality.High, true, null, false));
+        var first = imageElement with
+        {
+            ZOrder = 3,
+            ZOrderPath = [3],
+            Image = imageElement.Image! with { Interpretation = interpretation }
+        };
+        var second = first with
+        {
+            Identity = new ElementIdentity("6", "Repeated screenshot"),
+            ZOrder = 4,
+            ZOrderPath = [4],
+            Source = first.Source with { ElementId = "6", ElementName = "Repeated screenshot" }
+        };
+
+        var markdown = new DeckContextMarkdownExporter().Serialize(
+            document with
+            {
+                Slides =
+                [
+                    slide with
+                    {
+                        Elements = [.. slide.Elements.Where(element => element != imageElement), first, second]
+                    }
+                ]
+            });
+
+        Assert.Equal(1, CountOccurrences(markdown, "Internet Fibra 850 Mbps Precio regular 119"));
+        Assert.Contains("same image and crop as an earlier placement", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Manifest_serialization_is_deterministic_and_traceable()
     {
         var manifest = new ContextPackageManifest(
@@ -161,4 +235,7 @@ public sealed class DeckContextPackageExportTests
 
     private static TextContentContext Text(string value) =>
         new([new TextParagraphContext(0, 0, "l", null, [new TextRunContext(TextRunKind.Text, value, null)])]);
+
+    private static int CountOccurrences(string value, string text) =>
+        (value.Length - value.Replace(text, string.Empty, StringComparison.Ordinal).Length) / text.Length;
 }

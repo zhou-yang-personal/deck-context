@@ -9,6 +9,22 @@ public enum ImageContentInterpretationStatus
     Failed,
 }
 
+public enum ImageTextQuality
+{
+    Unknown,
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+public sealed record ImageTextAssessmentContext(
+    double? MeanConfidence,
+    ImageTextQuality Quality,
+    bool IncludeInMarkdown,
+    string? Reason,
+    bool WasTruncated);
+
 public sealed record ImageCropContext(
     int LeftRaw,
     int TopRaw,
@@ -29,7 +45,8 @@ public sealed record ImageContentInterpretationContext(
     ImageContentInterpretationStatus Status,
     string? ProviderId,
     string? Text,
-    string? Description);
+    string? Description,
+    ImageTextAssessmentContext? TextAssessment = null);
 
 public sealed record ImageContext(
     string? RelationshipId,
