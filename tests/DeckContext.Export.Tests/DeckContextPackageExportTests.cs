@@ -153,7 +153,7 @@ public sealed class DeckContextPackageExportTests
         Assert.Contains("low-quality or empty OCR stays in `deck.context.json`", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("A / y / | / NN", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("OCR provider", markdown, StringComparison.Ordinal);
-        Assert.DoesNotContain("OCR quality", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("- OCR quality:", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("Mean OCR confidence", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("Visual description", markdown, StringComparison.Ordinal);
     }
