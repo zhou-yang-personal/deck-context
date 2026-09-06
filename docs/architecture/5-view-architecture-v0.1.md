@@ -249,7 +249,7 @@ Exporter 不应重新解析 PPTX。
 - local multimodal model；
 - external Vision API。
 
-V1 保留该接口边界，并提供一个可选的 OpenAI Responses API 实现。该实现默认关闭、按次显式启用；核心 OOXML 提取不依赖它。后续仍可接入 local OCR、local VLM 或其他 remote provider。
+V1 保留该接口边界，并提供基于 Tesseract 5 的本地 CPU OCR 实现。Windows 包内置简体中文、英文和西班牙文模型，桌面应用默认启用且可按次关闭；核心 OOXML 提取仍不依赖它。后续仍可接入 local VLM 或其他显式选择的 provider。
 
 ## 2.3 Chart 逻辑模型
 
@@ -321,7 +321,7 @@ V1 baseline：
 | Deep OOXML access | System.Xml.Linq / XML APIs | 补齐高层 SDK 不足 |
 | JSON | System.Text.Json | IR / report serialization |
 | Office enhancement | PowerPoint Interop, optional | Optional rendering/export |
-| OCR/Vision | Optional provider interface + OpenAI Responses adapter | Disabled by default; provider failures degrade per image |
+| OCR/Vision | Optional provider interface + bundled Tesseract 5 adapter | Local CPU OCR; enabled by default in app/CLI; failures degrade per image |
 
 ## 3.2 Solution 建议结构
 
@@ -558,7 +558,7 @@ Local Provider
 Remote Provider
 ```
 
-随 V1 提供的 OpenAI adapter 只是其中一个可选实现。Provider 必须显式配置/启用，且输出必须标记来源，不能把 AI 生成的图片描述冒充成 OOXML 原始信息。相同 SHA-256 的图片只分析一次，再映射回各个 placement。
+V1 提供 Tesseract 5 local adapter，Windows 发布包同时携带语言模型和所需 native runtime。Provider 输出必须标记来源，不能把 OCR 结果冒充成 OOXML 原始信息。相同 SHA-256 且 crop 相同的图片只分析一次，再映射回各个 placement；同一图片的不同 crop 必须分别识别。
 
 ## 5.5 数据与隐私边界
 
@@ -570,7 +570,7 @@ Remote Provider
 - 不需要数据库；
 - 不需要网络。
 
-启用 Remote Vision Provider 时，只有交给 Provider 的具体图片字节进入外部边界；完整 PPTX、native text/table/chart 和 workbook 不随请求上传。WPF UI 必须显示隐私提示并要求用户主动启用；API key 只在当前进程内存中使用，不由 DeckContext 持久化。OpenAI adapter 请求设置 `store=false`，但用户仍需遵守所选 API 服务本身的数据和合规政策。
+启用随包提供的 Local OCR 时，图片字节只在本机进程内交给 Tesseract；PPTX、native text/table/chart、workbook、图片和识别结果均不离开本机。运行时不需要账号、API key 或网络。OCR 可关闭，此时核心 extraction 继续工作并明确记录图片像素未识别。
 
 ---
 
@@ -671,6 +671,6 @@ Derived semantics 必须基于 source facts 或明确 Provider 输出，不得�
 
 ## 图片像素内容如何转文字
 
-PPT 中作为图片存在的套餐截图、地图、图表截图等，需要 Image-to-Text/Vision 才能成为纯文本 LLM 输入。V1 的落地方式是：核心解析器先可靠识别、提取和引用图片；用户可在单次转换中主动启用 OpenAI Responses provider，把每个唯一图片交给 multimodal model，获得结构化的 recognized text 与 visual description。
+PPT 中作为图片存在的套餐截图、地图、图表截图等，需要像素识别才能把其中的文字纳入纯文本 LLM 输入。V1 的落地方式是：核心解析器先可靠识别、提取和引用图片；Tesseract local provider 再对唯一的 image-hash + crop 输入执行中文、英文、西班牙文 OCR。
 
-Provider 输出带有明确来源，不替代图片对象和 OOXML provenance。未配置 Provider 时继续输出 NotAnalyzed；远程调用失败时仅将对应 image element 标为 Partial 并写入诊断。接口仍允许未来实现完全本地的 OCR/VLM 路径。
+Provider 输出带有明确来源，不替代图片对象和 OOXML provenance。未配置 Provider 时继续输出 NotAnalyzed；OCR 初始化、格式或单图处理失败时仅将对应 image element 标为 Partial 并写入诊断。Tesseract 结果只表示可见文字转录，不提供图片整体含义、图表关系或地图语义。

@@ -32,6 +32,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Prepare pinned offline OCR models and test fixture
+        shell: pwsh
+        run: >-
+          ./scripts/Prepare-OcrAssets.ps1
+          -DestinationDirectory artifacts/ocr/tessdata
+          -TestFixtureDirectory artifacts/ocr-test
+
       - name: Restore
         run: dotnet restore DeckContext.sln --runtime win-x64
 
@@ -40,6 +47,9 @@ jobs:
 
       - name: Test
         run: dotnet test DeckContext.sln --configuration Release --no-build
+        env:
+          DECKCONTEXT_TEST_OCR_DATA: ${{ github.workspace }}\artifacts\ocr\tessdata
+          DECKCONTEXT_TEST_OCR_IMAGE: ${{ github.workspace }}\artifacts\ocr-test\phototest.tif
 
       # Publish the console tool first, then the WPF app into the same directory.
       # The WindowsDesktop publish supplies the superset when framework files overlap.
@@ -61,6 +71,32 @@ jobs:
           --no-restore
           --output artifacts/publish/DeckContext
 
+      - name: Add offline OCR assets and app-local Visual C++ runtime
+        shell: pwsh
+        run: |
+          $packageDirectory = "artifacts/publish/DeckContext"
+          Copy-Item "artifacts/ocr" (Join-Path $packageDirectory "ocr") -Recurse
+          Copy-Item "packaging/THIRD-PARTY-NOTICES.txt" $packageDirectory
+
+          $visualStudioRoot = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/2022"
+          $crtDirectory = Get-ChildItem $visualStudioRoot -Recurse -Directory -Filter "Microsoft.VC143.CRT" |
+            Where-Object { $_.FullName -match "[\\/]x64[\\/]" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $crtDirectory) {
+            throw "The Visual C++ x64 redistributable directory was not found on the runner."
+          }
+
+          foreach ($fileName in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
+            $sourcePath = Join-Path $crtDirectory.FullName $fileName
+            if (-not (Test-Path $sourcePath -PathType Leaf)) {
+              throw "The Visual C++ runtime file '$sourcePath' was not found."
+            }
+
+            Copy-Item $sourcePath $packageDirectory
+          }
+
       - name: Verify shared package layout and console startup
         shell: pwsh
         run: |
@@ -69,7 +105,16 @@ jobs:
             "DeckContext.exe",
             "DeckContext.Verification.exe",
             "DeckContext.runtimeconfig.json",
-            "DeckContext.Verification.runtimeconfig.json"
+            "DeckContext.Verification.runtimeconfig.json",
+            "x64/tesseract55.dll",
+            "x64/leptonica-1.85.0.dll",
+            "ocr/tessdata/chi_sim.traineddata",
+            "ocr/tessdata/eng.traineddata",
+            "ocr/tessdata/spa.traineddata",
+            "msvcp140.dll",
+            "vcruntime140.dll",
+            "vcruntime140_1.dll",
+            "THIRD-PARTY-NOTICES.txt"
           )
 
           foreach ($fileName in $requiredFiles) {

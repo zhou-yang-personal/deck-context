@@ -74,6 +74,7 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
         var document = await ApplyImageInterpretationsAsync(
             readResult,
             options?.ImageTextProvider,
+            progress,
             cancellationToken).ConfigureAwait(false);
         string? stagingDirectory = null;
 
@@ -190,6 +191,7 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
     private static async Task<DeckContextDocument> ApplyImageInterpretationsAsync(
         OpenXmlDeckContextReadResult readResult,
         IImageTextProvider? provider,
+        IProgress<ConversionProgress>? progress,
         CancellationToken cancellationToken)
     {
         const string notConfiguredCode = "DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED";
@@ -206,7 +208,7 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
 
         var uniqueInternalImages = imageElements
             .Where(element => element.Image is { Sha256: not null, PartUri: not null, ContentType: not null })
-            .DistinctBy(element => element.Image!.Sha256, StringComparer.Ordinal)
+            .DistinctBy(element => InterpretationKey(element.Image!), StringComparer.Ordinal)
             .ToArray();
         var interpretations = new Dictionary<string, ImageContentInterpretationContext>(StringComparer.Ordinal);
 
@@ -216,14 +218,21 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
                 .Where(asset => asset.Kind == OpenXmlExtractedAssetKind.Image)
                 .ToDictionary(asset => asset.PartUri, StringComparer.Ordinal);
 
-            foreach (var element in uniqueInternalImages)
+            for (var imageIndex = 0; imageIndex < uniqueInternalImages.Length; imageIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var element = uniqueInternalImages[imageIndex];
                 var image = element.Image!;
+                var imageNumber = imageIndex + 1;
+                var imageProgress = 20 + (int)Math.Floor(14d * imageNumber / uniqueInternalImages.Length);
+                progress?.Report(new ConversionProgress(
+                    imageProgress,
+                    "Images",
+                    $"Analyzing image {imageNumber} of {uniqueInternalImages.Length} with {provider.ProviderId}."));
 
                 if (!imageAssets.TryGetValue(image.PartUri!, out var asset))
                 {
-                    interpretations[image.Sha256!] = new ImageContentInterpretationContext(
+                    interpretations[InterpretationKey(image)] = new ImageContentInterpretationContext(
                         ImageContentInterpretationStatus.Failed,
                         provider.ProviderId,
                         null,
@@ -233,12 +242,13 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
 
                 try
                 {
-                    interpretations[image.Sha256!] = await provider.AnalyzeAsync(
+                    interpretations[InterpretationKey(image)] = await provider.AnalyzeAsync(
                         new ImageTextRequest(
                             image.ContentType!,
                             image.PartUri!,
                             asset.Content,
-                            element.Source),
+                            element.Source,
+                            image.Crop),
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -247,7 +257,7 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
                 }
                 catch (Exception exception)
                 {
-                    interpretations[image.Sha256!] = new ImageContentInterpretationContext(
+                    interpretations[InterpretationKey(image)] = new ImageContentInterpretationContext(
                         ImageContentInterpretationStatus.Failed,
                         provider.ProviderId,
                         null,
@@ -267,7 +277,7 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
         {
             deckDiagnostics.Add(new ExtractionDiagnostic(
                 notConfiguredCode,
-                $"{imageElements.Length} image placement(s) referencing {uniqueInternalImages.Length} unique internal image(s) " +
+                $"{imageElements.Length} image placement(s) referencing {uniqueInternalImages.Length} unique OCR input(s) " +
                 "were extracted without OCR/Vision pixel interpretation.",
                 DiagnosticSeverity.Information,
                 "ImageInterpretationPipeline",
@@ -331,7 +341,7 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
         }
 
         var interpretation = image.Sha256 is not null &&
-                             interpretations.TryGetValue(image.Sha256, out var resolvedInterpretation)
+                             interpretations.TryGetValue(InterpretationKey(image), out var resolvedInterpretation)
             ? resolvedInterpretation
             : new ImageContentInterpretationContext(
                 ImageContentInterpretationStatus.Failed,
@@ -364,6 +374,18 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
             Status = status,
             Diagnostics = diagnostics
         };
+    }
+
+    private static string InterpretationKey(ImageContext image)
+    {
+        if (image.Crop is null)
+        {
+            return image.Sha256 ?? string.Empty;
+        }
+
+        return string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{image.Sha256}:{image.Crop.LeftRaw}:{image.Crop.TopRaw}:{image.Crop.RightRaw}:{image.Crop.BottomRaw}");
     }
 
     private static ContextPackageAsset CreateGeneratedAsset(

@@ -4,6 +4,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="TesseractOCR" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DeckContext.Application\DeckContext.Application.csproj" />
     <ProjectReference Include="..\DeckContext.Domain\DeckContext.Domain.csproj" />
     <ProjectReference Include="..\DeckContext.Export\DeckContext.Export.csproj" />

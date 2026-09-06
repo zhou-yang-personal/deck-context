@@ -79,6 +79,24 @@ public sealed class RepositoryArchitectureTests
             packageOwners);
     }
 
+    [Fact]
+    public void Pipeline_is_the_only_product_project_with_the_Tesseract_package()
+    {
+        var productProjects = Directory
+            .EnumerateFiles(Path.Combine(RepositoryRoot, "src"), "*.csproj", SearchOption.AllDirectories)
+            .ToArray();
+
+        var packageOwners = productProjects
+            .Where(project => ReadItems(project, "PackageReference")
+                .Contains("TesseractOCR", StringComparer.Ordinal))
+            .Select(ToRepositoryRelativePath)
+            .ToArray();
+
+        Assert.Equal(
+            ["src/DeckContext.Pipeline/DeckContext.Pipeline.csproj"],
+            packageOwners);
+    }
+
     private static void AssertProjectReferences(string projectPath, params string[] expectedReferences)
     {
         var absoluteProjectPath = Path.Combine(

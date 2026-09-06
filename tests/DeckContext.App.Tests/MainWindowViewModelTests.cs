@@ -63,19 +63,24 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void Image_analysis_requires_an_api_key_and_model_when_enabled()
+    public async Task Local_OCR_is_enabled_by_default_without_credentials_and_can_be_disabled()
     {
         using var workspace = new TemporaryWorkspace();
         var sourcePath = workspace.CreatePowerPointPlaceholder("sample.pptx");
-        var viewModel = new MainWindowViewModel(new FakeConversionService());
+        var service = new FakeConversionService();
+        var viewModel = new MainWindowViewModel(service);
         viewModel.SetInputPath(sourcePath);
 
-        viewModel.ImageAnalysisEnabled = true;
-        Assert.False(viewModel.CanConvert);
-        Assert.Contains("sent to OpenAI", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
-
-        viewModel.SetVisionApiKey("test-key");
+        Assert.True(viewModel.LocalOcrEnabled);
         Assert.True(viewModel.CanConvert);
+        await viewModel.ConvertAsync(TestContext.Current.CancellationToken);
+        Assert.IsType<TesseractImageTextProvider>(service.LastOptions?.ImageTextProvider);
+
+        viewModel.LocalOcrEnabled = false;
+        Assert.True(viewModel.CanConvert);
+        Assert.Contains("Only native PPTX", viewModel.StatusMessage, StringComparison.Ordinal);
+        await viewModel.ConvertAsync(TestContext.Current.CancellationToken);
+        Assert.Null(service.LastOptions?.ImageTextProvider);
     }
 
     [Fact]
@@ -108,6 +113,8 @@ public sealed class MainWindowViewModelTests
     private sealed class FakeConversionService(params ExtractionDiagnostic[] diagnostics)
         : IDeckContextConversionService
     {
+        public DeckContextConversionOptions? LastOptions { get; private set; }
+
         public Task<ContextPackageResult> ConvertAsync(
             string sourcePath,
             string outputDirectory,
@@ -116,6 +123,7 @@ public sealed class MainWindowViewModelTests
             DeckContextConversionOptions? options = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            LastOptions = options;
             Directory.CreateDirectory(outputDirectory);
             progress?.Report(new ConversionProgress(50, "Test", "Testing conversion."));
 

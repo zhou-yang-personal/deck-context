@@ -217,19 +217,20 @@ The resulting Markdown/JSON should remain useful outside DeckContext and should 
 
 ## 10. Image pixel-content interpretation
 
-V1 includes optional image understanding through the existing provider boundary and ships an OpenAI Responses API adapter as the first concrete provider. This does not change the offline core baseline:
+V1 includes image text recognition through the existing provider boundary and ships a bundled, fully local Tesseract 5 CPU adapter:
 
-- image analysis is disabled by default and must be explicitly enabled per conversion;
-- the user supplies an API key and a vision-capable model name;
-- only extracted image bytes are sent to the provider, not the complete PPTX or its native text/table/chart/workbook content;
-- requests disable API response storage where the provider supports that option;
-- the API key is kept in memory for the current run and is not persisted by DeckContext;
-- duplicate image placements are analyzed once per unique image hash;
-- recognized text, visual description, provider identity, and failure status remain distinguishable from native OOXML evidence;
-- a provider failure degrades the affected image/object without discarding other extraction results;
-- without a provider, DeckContext continues to extract/reference images and reports that pixel content was not analyzed.
+- the packaged desktop application and verification command enable local OCR by default and allow it to be disabled per conversion;
+- Simplified Chinese, English, and Spanish `tessdata_fast` models are included in the Windows package;
+- OCR does not require an account, API key, network connection, PowerPoint installation, or separately installed OCR runtime;
+- image bytes and recognized text remain on the local computer;
+- PowerPoint crop metadata limits the pixel region submitted to OCR where it yields a valid region;
+- duplicate placements are analyzed once per unique image hash and crop;
+- recognized text, OCR metadata, provider identity, and failure status remain distinguishable from native OOXML evidence;
+- text-free images are reported as having no readable text rather than treated as failures;
+- an OCR engine/model/format failure degrades the affected image/object without discarding other extraction results;
+- with OCR disabled or no provider supplied, DeckContext continues to extract/reference images and reports that pixel content was not analyzed.
 
-The provider interface remains implementation-neutral so a local OCR engine, local multimodal model, or another remote provider can be added later without changing the core OOXML domain model.
+Local OCR transcribes pixels but does not claim multimodal understanding of a photo, map, chart screenshot, or diagram relationship. The provider interface remains implementation-neutral so a future local multimodal model or another explicitly selected provider can be added without changing the core OOXML domain model.
 
 ## 11. Acceptance boundary for the initial implementation
 

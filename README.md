@@ -37,9 +37,9 @@ V1 is a local Windows desktop application based on:
 - Open XML SDK for PPTX / OOXML parsing;
 - direct OOXML parsing where higher-fidelity access is required;
 - an optional PowerPoint/Office adapter for high-fidelity rendering or Office-specific enhancement;
-- a pluggable image text/vision adapter rather than a mandatory cloud dependency.
+- a pluggable image text adapter with a bundled offline Tesseract implementation.
 
-The core extraction pipeline must remain usable without Microsoft PowerPoint, OCR, a vision model, a database, or a cloud service.
+The core extraction pipeline remains usable without Microsoft PowerPoint, OCR, a database, or a cloud service. The packaged desktop app adds local CPU OCR without uploading source data.
 
 ## Documentation
 
@@ -54,7 +54,10 @@ The core extraction pipeline must remain usable without Microsoft PowerPoint, OC
 The repository requires the .NET 10 SDK. From the repository root:
 
 ```powershell
-dotnet restore DeckContext.sln
+./scripts/Prepare-OcrAssets.ps1 -DestinationDirectory artifacts/ocr/tessdata -TestFixtureDirectory artifacts/ocr-test
+$env:DECKCONTEXT_TEST_OCR_DATA = "$PWD\artifacts\ocr\tessdata"
+$env:DECKCONTEXT_TEST_OCR_IMAGE = "$PWD\artifacts\ocr-test\phototest.tif"
+dotnet restore DeckContext.sln --runtime win-x64
 dotnet build DeckContext.sln --configuration Release --no-restore
 dotnet test DeckContext.sln --configuration Release --no-build
 ```
@@ -80,7 +83,7 @@ Select or drop a `.pptx`, optionally choose an output folder, then select **Extr
 - `workbooks\` — exact embedded workbook assets when present;
 - `images\` — exact internal image media when present.
 
-The default extraction remains fully local. If image pixel understanding is needed, enable **Analyze image pixels with OpenAI** for that conversion, enter an OpenAI API key, and choose a vision-capable model. Only extracted image bytes are sent to the configured provider; the PPTX, native text, tables, charts, and workbooks remain on the local extraction path. The API key is used in memory for the current run and is not saved by DeckContext.
+Image OCR is enabled by default and remains fully local. The package includes Tesseract 5 plus `tessdata_fast` models for Simplified Chinese, English, and Spanish; no account, API key, network access, PowerPoint, or separate OCR installation is required. Disable **Recognize text inside images with offline OCR** when only native PPTX structure and extracted assets are needed. OCR transcribes visible text; it does not invent a semantic description of photos, maps, or diagrams.
 
 DeckContext publishes the package through a sibling staging directory and replaces an existing output only when it is empty or is an intact DeckContext-owned package. Choose a new or empty directory when exporting into a location that contains unrelated files.
 
@@ -90,14 +93,13 @@ The same pipeline is available as a command for repeatable verification or autom
 .\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
 ```
 
-Optional image analysis is also available to automation. Set `OPENAI_API_KEY`, then pass a vision-capable model:
+Automation also enables bundled offline OCR by default. Use `--no-ocr` for a faster structure-only extraction:
 
 ```powershell
-$env:OPENAI_API_KEY = "your-api-key"
-.\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output" --vision-model "gpt-5.6-luna"
+.\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output" --no-ocr
 ```
 
-Both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project concise Markdown, complete JSON, diagnostics, manifest, and assets from that result. Duplicate image placements are analyzed only once per unique image hash. Without a provider, images are still preserved and the output records one explicit deck-level notice that pixel content was not analyzed.
+Both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project concise Markdown, complete JSON, diagnostics, manifest, and assets from that result. Duplicate image placements with the same image hash and crop are analyzed once. Without a provider, images are still preserved and the output records one explicit deck-level notice that pixel content was not analyzed.
 
 ## Branch Strategy
 

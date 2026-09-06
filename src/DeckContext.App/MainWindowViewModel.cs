@@ -23,9 +23,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int progressPercentage;
     private bool isBusy;
     private bool hasCompleted;
-    private bool imageAnalysisEnabled;
-    private string visionApiKey = string.Empty;
-    private string visionModel = "gpt-5.6-luna";
+    private bool localOcrEnabled = true;
 
     public MainWindowViewModel(IDeckContextConversionService conversionService)
     {
@@ -84,55 +82,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool CanConvert => !IsBusy && File.Exists(InputPath) &&
         string.Equals(Path.GetExtension(InputPath), ".pptx", StringComparison.OrdinalIgnoreCase) &&
-        !string.IsNullOrWhiteSpace(OutputDirectory) &&
-        (!ImageAnalysisEnabled ||
-         (!string.IsNullOrWhiteSpace(visionApiKey) && !string.IsNullOrWhiteSpace(VisionModel)));
+        !string.IsNullOrWhiteSpace(OutputDirectory);
 
     public bool CanOpenOutput => HasCompleted && Directory.Exists(OutputDirectory);
 
     public bool CanChangePaths => !IsBusy;
 
-    public bool ImageAnalysisEnabled
+    public bool LocalOcrEnabled
     {
-        get => imageAnalysisEnabled;
+        get => localOcrEnabled;
         set
         {
-            if (IsBusy || !SetField(ref imageAnalysisEnabled, value))
+            if (IsBusy || !SetField(ref localOcrEnabled, value))
             {
                 return;
             }
 
             StatusMessage = value
-                ? "Image understanding enabled. Extracted images will be sent to OpenAI during conversion."
-                : "Image understanding disabled. PPTX extraction remains fully local.";
+                ? "Offline image OCR enabled. Image bytes stay on this computer."
+                : "Offline image OCR disabled. Only native PPTX structure and assets will be extracted.";
             NotifyCommandState();
         }
     }
 
-    public string VisionModel
-    {
-        get => visionModel;
-        set
-        {
-            if (!IsBusy && SetField(ref visionModel, value))
-            {
-                NotifyCommandState();
-            }
-        }
-    }
-
     public ObservableCollection<DiagnosticDisplayItem> Diagnostics { get; } = [];
-
-    public void SetVisionApiKey(string value)
-    {
-        if (IsBusy)
-        {
-            return;
-        }
-
-        visionApiKey = value;
-        NotifyCommandState();
-    }
 
     public void SetInputPath(string path)
     {
@@ -187,7 +160,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ProgressPercentage = 0;
         Diagnostics.Clear();
         var acceptsProgress = 1;
-        OpenAiImageTextProvider? imageTextProvider = null;
+        TesseractImageTextProvider? imageTextProvider = null;
 
         try
         {
@@ -202,9 +175,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 StatusMessage = update.Message;
             });
 
-            if (ImageAnalysisEnabled)
+            if (LocalOcrEnabled)
             {
-                imageTextProvider = new OpenAiImageTextProvider(visionApiKey, VisionModel);
+                imageTextProvider = new TesseractImageTextProvider();
             }
 
             var result = await conversionService.ConvertAsync(
@@ -256,8 +229,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanOpenOutput));
         OnPropertyChanged(nameof(CanChangePaths));
-        OnPropertyChanged(nameof(ImageAnalysisEnabled));
-        OnPropertyChanged(nameof(VisionModel));
+        OnPropertyChanged(nameof(LocalOcrEnabled));
     }
 
     private static string FormatLocation(SourceReference? source)

@@ -1,0 +1,21 @@
+DeckContext offline OCR third-party notices
+
+TesseractOCR .NET wrapper 5.5.2
+Source: https://github.com/Sicos1977/TesseractOCR
+License: Apache License 2.0
+
+Tesseract OCR 5.5.1
+Source: https://github.com/tesseract-ocr/tesseract
+License: Apache License 2.0
+
+Leptonica 1.85.0
+Source: https://github.com/DanBloomberg/leptonica
+License: Leptonica two-clause BSD-style license
+
+tessdata_fast language models (chi_sim, eng, spa)
+Source: https://github.com/tesseract-ocr/tessdata_fast
+Pinned source commit: 87416418657359cb625c412a48b6e1d6d41c29bd
+License: Apache License 2.0
+
+The complete upstream license texts and the TesseractOCR package notice are
+included in the ocr/licenses directory of the Windows verification package.

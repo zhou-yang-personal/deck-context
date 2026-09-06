@@ -113,6 +113,7 @@ public sealed class DeckContextConversionServiceTests
             options: new DeckContextConversionOptions(provider));
 
         Assert.Equal(1, provider.CallCount);
+        Assert.NotNull(Assert.Single(provider.Requests).Crop);
         var element = Assert.Single(
             result.Document.Slides[0].Elements,
             candidate => candidate.Image is not null);
@@ -133,6 +134,28 @@ public sealed class DeckContextConversionServiceTests
             result.ExtractionReportPath,
             TestContext.Current.CancellationToken);
         Assert.DoesNotContain("DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED", report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Convert_analyzes_reused_image_bytes_separately_for_different_crops()
+    {
+        using var directory = new TemporaryDirectory();
+        var sourcePath = PresentationFixture.CreateRepeatedImageWithDifferentCrops(directory.Path);
+        var output = Path.Combine(directory.Path, "different-crop-output");
+        var provider = new FakeImageTextProvider();
+
+        var result = await new DeckContextConversionService().ConvertAsync(
+            sourcePath,
+            output,
+            cancellationToken: TestContext.Current.CancellationToken,
+            options: new DeckContextConversionOptions(provider));
+
+        Assert.Equal(2, provider.CallCount);
+        Assert.Equal(2, provider.Requests.Select(request => request.Crop).Distinct().Count());
+        Assert.Equal(
+            2,
+            result.Document.Slides[0].Elements.Count(element => element.Image is not null));
+        Assert.Single(result.Assets, asset => asset.Kind == ContextPackageAssetKind.Image);
     }
 
     [Fact]
@@ -327,6 +350,8 @@ public sealed class DeckContextConversionServiceTests
     {
         public int CallCount { get; private set; }
 
+        public List<ImageTextRequest> Requests { get; } = [];
+
         public string ProviderId => "fake-vision:test";
 
         public Task<ImageContentInterpretationContext> AnalyzeAsync(
@@ -335,6 +360,7 @@ public sealed class DeckContextConversionServiceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             CallCount++;
+            Requests.Add(request);
             Assert.NotEmpty(request.Content.ToArray());
             return Task.FromResult(new ImageContentInterpretationContext(
                 ImageContentInterpretationStatus.Succeeded,

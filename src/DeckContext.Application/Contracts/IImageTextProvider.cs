@@ -6,7 +6,8 @@ public sealed record ImageTextRequest(
     string ContentType,
     string PartUri,
     ReadOnlyMemory<byte> Content,
-    SourceReference Source);
+    SourceReference Source,
+    ImageCropContext? Crop = null);
 
 public interface IImageTextProvider
 {

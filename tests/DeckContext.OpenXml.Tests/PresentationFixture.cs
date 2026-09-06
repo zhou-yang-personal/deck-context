@@ -68,6 +68,39 @@ internal static class PresentationFixture
         return CreateImagePackage(directory, "images-basic.pptx", includeRelationship: true);
     }
 
+    public static string CreateRepeatedImageWithDifferentCrops(string directory)
+    {
+        var secondPlacement = """
+              <p:pic>
+                <p:nvPicPr>
+                  <p:cNvPr id="41" name="Market Map Detail"/>
+                  <p:cNvPicPr/><p:nvPr/>
+                </p:nvPicPr>
+                <p:blipFill>
+                  <a:blip r:embed="rId1"/>
+                  <a:srcRect l="0" t="0" r="25000" b="0"/>
+                  <a:stretch><a:fillRect/></a:stretch>
+                </p:blipFill>
+                <p:spPr>
+                  <a:xfrm>
+                    <a:off x="7200000" y="900000"/>
+                    <a:ext cx="4000000" cy="4000000"/>
+                  </a:xfrm>
+                  <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                </p:spPr>
+              </p:pic>
+            """;
+        var slide = SlideWithImage.Replace(
+            "</p:spTree>",
+            $"{secondPlacement}\n</p:spTree>",
+            StringComparison.Ordinal);
+        return CreateImagePackage(
+            directory,
+            "images-repeated-different-crops.pptx",
+            includeRelationship: true,
+            slideXml: slide);
+    }
+
     public static string CreateMissingImageRelationship(string directory)
     {
         return CreateImagePackage(directory, "images-missing-relationship.pptx", includeRelationship: false);
@@ -190,7 +223,8 @@ internal static class PresentationFixture
     private static string CreateImagePackage(
         string directory,
         string fileName,
-        bool includeRelationship)
+        bool includeRelationship,
+        string? slideXml = null)
     {
         var path = Path.Combine(directory, fileName);
 
@@ -199,7 +233,7 @@ internal static class PresentationFixture
         WriteEntry(archive, "_rels/.rels", PackageRelationships);
         WriteEntry(archive, "ppt/presentation.xml", PresentationXml(twoSlides: false));
         WriteEntry(archive, "ppt/_rels/presentation.xml.rels", PresentationRelationships(twoSlides: false));
-        WriteEntry(archive, "ppt/slides/slide1.xml", SlideWithImage);
+        WriteEntry(archive, "ppt/slides/slide1.xml", slideXml ?? SlideWithImage);
 
         if (includeRelationship)
         {
