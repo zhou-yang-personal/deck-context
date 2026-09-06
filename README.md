@@ -80,6 +80,8 @@ Select or drop a `.pptx`, optionally choose an output folder, then select **Extr
 - `workbooks\` — exact embedded workbook assets when present;
 - `images\` — exact internal image media when present.
 
+The default extraction remains fully local. If image pixel understanding is needed, enable **Analyze image pixels with OpenAI** for that conversion, enter an OpenAI API key, and choose a vision-capable model. Only extracted image bytes are sent to the configured provider; the PPTX, native text, tables, charts, and workbooks remain on the local extraction path. The API key is used in memory for the current run and is not saved by DeckContext.
+
 DeckContext publishes the package through a sibling staging directory and replaces an existing output only when it is empty or is an intact DeckContext-owned package. Choose a new or empty directory when exporting into a location that contains unrelated files.
 
 The same pipeline is available as a command for repeatable verification or automation:
@@ -88,7 +90,14 @@ The same pipeline is available as a command for repeatable verification or autom
 .\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
 ```
 
-Both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project Markdown, JSON, diagnostics, manifest, and assets from that result. Images are preserved and identified, but pixel semantics are explicitly reported as not analyzed until an OCR/Vision provider is configured.
+Optional image analysis is also available to automation. Set `OPENAI_API_KEY`, then pass a vision-capable model:
+
+```powershell
+$env:OPENAI_API_KEY = "your-api-key"
+.\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output" --vision-model "gpt-5.6-luna"
+```
+
+Both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project concise Markdown, complete JSON, diagnostics, manifest, and assets from that result. Duplicate image placements are analyzed only once per unique image hash. Without a provider, images are still preserved and the output records one explicit deck-level notice that pixel content was not analyzed.
 
 ## Branch Strategy
 

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using DeckContext.Pipeline;
 using Microsoft.Win32;
 
@@ -56,6 +57,14 @@ public partial class MainWindow : Window
 
     private async void Convert_Click(object sender, RoutedEventArgs e) =>
         await viewModel.ConvertAsync();
+
+    private void VisionApiKey_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is PasswordBox passwordBox)
+        {
+            viewModel.SetVisionApiKey(passwordBox.Password);
+        }
+    }
 
     private void OpenOutput_Click(object sender, RoutedEventArgs e)
     {

@@ -63,6 +63,22 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void Image_analysis_requires_an_api_key_and_model_when_enabled()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var sourcePath = workspace.CreatePowerPointPlaceholder("sample.pptx");
+        var viewModel = new MainWindowViewModel(new FakeConversionService());
+        viewModel.SetInputPath(sourcePath);
+
+        viewModel.ImageAnalysisEnabled = true;
+        Assert.False(viewModel.CanConvert);
+        Assert.Contains("uploaded", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.SetVisionApiKey("test-key");
+        Assert.True(viewModel.CanConvert);
+    }
+
+    [Fact]
     public async Task ConvertAsync_keeps_the_active_job_paths_immutable_while_busy()
     {
         using var workspace = new TemporaryWorkspace();
@@ -96,7 +112,8 @@ public sealed class MainWindowViewModelTests
             string sourcePath,
             string outputDirectory,
             IProgress<ConversionProgress>? progress = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            DeckContextConversionOptions? options = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(outputDirectory);
@@ -131,7 +148,8 @@ public sealed class MainWindowViewModelTests
             string sourcePath,
             string outputDirectory,
             IProgress<ConversionProgress>? progress = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            DeckContextConversionOptions? options = null)
         {
             Started.SetResult();
             await Release.Task.WaitAsync(cancellationToken);

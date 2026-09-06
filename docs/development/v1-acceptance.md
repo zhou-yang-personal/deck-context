@@ -18,11 +18,11 @@ This checklist intentionally combines the three manual gates. One representative
 | 6. Follow embedded Excel | Workbook fixture asserts chart relationship, workbook part URI, relationship id, hash, and size. |
 | 7. Recover workbook source data | Workbook fixture asserts worksheet metadata, A1 ranges, cells, formulas, raw values, and resolved values. |
 | 8. Identify image objects | Image fixture asserts media relationship, type, filename, hash, crop, transform, and native alternative text. |
-| 9. Never fabricate image semantics | Image fixture and Markdown tests assert `NotConfigured` and “Pixel content: not analyzed.” |
+| 9. Never fabricate image semantics | Image fixtures assert the no-provider state; provider tests assert explicit provider provenance, structured recognized text/description, unique-image deduplication, and scoped failure diagnostics. |
 | 10. Generate Markdown and JSON from one IR | `DeckContextConversionService` reads once, then passes the same document to both deterministic serializers. |
 | 11. Report unsupported objects | Unsupported chart and diagnostic-report tests assert scoped codes, severity, extractor, outcome, and provenance. |
 | 12. Degrade one object without losing the deck | Malformed workbook and missing relationship tests assert partial object/deck status while retaining usable cached/native data. |
-| 13. Produce genuinely readable LLM input | Markdown structure tests cover deck summary, slides, source-ordered objects, text, tables, charts, workbook cells, images, and diagnostics; final qualitative confirmation is manual. |
+| 13. Produce genuinely readable LLM input | Markdown tests cover semantic title selection, concise extraction summaries, readable text/tables/charts, compact workbook references, formatted values, image interpretations, and condensed diagnostics; the complete trace remains in JSON. Final qualitative confirmation is manual. |
 
 The Windows workflow restores, builds, tests, and publishes the WPF application and verification command into one self-contained directory with a shared .NET runtime. CI checks that both entry points and their runtime configuration files exist, only one CoreCLR is packaged, and the verification command starts. The complete-package tests also re-run a fixture twice and compare Markdown, JSON, report, and manifest byte-for-byte, verify every manifest asset's size and SHA-256, replace an intact prior package without stale assets, and refuse to overwrite unrelated files.
 
@@ -39,10 +39,10 @@ The conversion session opens the PPTX once, captures immutable workbook/image as
 5. Select **Extract context**. Confirm progress/status changes, the window remains responsive, and diagnostics are visible rather than hidden.
 6. Select **Open output folder** and confirm these files exist and open: `deck.context.md`, `deck.context.json`, `extraction-report.json`, and `manifest.json`.
 7. Confirm the five native charts retain chart type, series, categories, values, formulas/ranges, and chart-to-workbook linkage. Open exported `workbooks\*.xlsx` files and spot-check them against the presentation.
-8. For any image object, confirm the media relationship and exported image are traceable and the output does not invent pixel meaning. Without a provider it must state that pixel content was not analyzed.
+8. For any image object, first confirm the no-provider run preserves the image and states that pixel content was not analyzed. Then opt in with a test API key/model and confirm recognized text/visual description include provider provenance, repeated placements do not trigger inconsistent duplicate results, and provider failure does not erase other slide content. Do not use sensitive material for this provider test.
 9. Confirm every unsupported/partial item appears in `extraction-report.json` with a useful code, severity, extractor, outcome, and source location; a local failure must not erase unaffected slides or objects.
 10. Re-run the same deck into a fresh directory and compare the four primary text/JSON files. They should be byte-identical.
-11. Give `deck.context.md` (and, when deeper traceability is needed, `deck.context.json`) to ChatGPT. Confirm it can identify slide structure, cite source slide/object facts, inspect table/chart data, and distinguish extracted evidence from unavailable image semantics.
+11. Give `deck.context.md` (and, when deeper traceability is needed, `deck.context.json`) to ChatGPT. Confirm it can identify slide structure, inspect table/chart data, understand analyzed image content, distinguish provider-derived semantics from native evidence, and use JSON when object-level geometry or provenance is needed.
 
 ## Acceptance record
 

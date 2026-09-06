@@ -215,16 +215,21 @@ One unsupported object should not normally invalidate the entire deck. Extract w
 
 The resulting Markdown/JSON should remain useful outside DeckContext and should not require a proprietary database to interpret.
 
-## 10. Deferred decision: image pixel-content interpretation
+## 10. Image pixel-content interpretation
 
-A key unresolved V1 decision is whether image pixel-content understanding is included in the first implementation milestone and, if so, which provider strategy is used:
+V1 includes optional image understanding through the existing provider boundary and ships an OpenAI Responses API adapter as the first concrete provider. This does not change the offline core baseline:
 
-- local OCR;
-- local multimodal model;
-- external Vision API;
-- configurable combination.
+- image analysis is disabled by default and must be explicitly enabled per conversion;
+- the user supplies an API key and a vision-capable model name;
+- only extracted image bytes are sent to the provider, not the complete PPTX or its native text/table/chart/workbook content;
+- requests disable API response storage where the provider supports that option;
+- the API key is kept in memory for the current run and is not persisted by DeckContext;
+- duplicate image placements are analyzed once per unique image hash;
+- recognized text, visual description, provider identity, and failure status remain distinguishable from native OOXML evidence;
+- a provider failure degrades the affected image/object without discarding other extraction results;
+- without a provider, DeckContext continues to extract/reference images and reports that pixel content was not analyzed.
 
-Until explicitly decided, the architecture must expose the capability through a provider interface but must not hard-code one provider as mandatory.
+The provider interface remains implementation-neutral so a local OCR engine, local multimodal model, or another remote provider can be added later without changing the core OOXML domain model.
 
 ## 11. Acceptance boundary for the initial implementation
 

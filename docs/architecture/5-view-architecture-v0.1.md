@@ -249,7 +249,7 @@ Exporter 不应重新解析 PPTX。
 - local multimodal model；
 - external Vision API。
 
-当前只定义接口边界，不选择强制 Provider。
+V1 保留该接口边界，并提供一个可选的 OpenAI Responses API 实现。该实现默认关闭、按次显式启用；核心 OOXML 提取不依赖它。后续仍可接入 local OCR、local VLM 或其他 remote provider。
 
 ## 2.3 Chart 逻辑模型
 
@@ -321,7 +321,7 @@ V1 baseline：
 | Deep OOXML access | System.Xml.Linq / XML APIs | 补齐高层 SDK 不足 |
 | JSON | System.Text.Json | IR / report serialization |
 | Office enhancement | PowerPoint Interop, optional | Optional rendering/export |
-| OCR/Vision | Interface only in baseline | Provider later decided |
+| OCR/Vision | Optional provider interface + OpenAI Responses adapter | Disabled by default; provider failures degrade per image |
 
 ## 3.2 Solution 建议结构
 
@@ -550,7 +550,7 @@ V1 推荐：
 
 ## 5.4 OCR/Vision 部署边界
 
-V1 baseline 不绑定具体 Provider，因此部署模型允许：
+V1 baseline 不把任何 Provider 设为核心依赖，因此部署模型允许：
 
 ```text
 No Provider
@@ -558,7 +558,7 @@ Local Provider
 Remote Provider
 ```
 
-Provider 必须显式配置/启用，且输出必须标记来源，不能把 AI 生成的图片描述冒充成 OOXML 原始信息。
+随 V1 提供的 OpenAI adapter 只是其中一个可选实现。Provider 必须显式配置/启用，且输出必须标记来源，不能把 AI 生成的图片描述冒充成 OOXML 原始信息。相同 SHA-256 的图片只分析一次，再映射回各个 placement。
 
 ## 5.5 数据与隐私边界
 
@@ -570,7 +570,7 @@ Provider 必须显式配置/启用，且输出必须标记来源，不能把 AI 
 - 不需要数据库；
 - 不需要网络。
 
-如果未来启用 Remote Vision Provider，只有交给 Provider 的具体图片内容进入外部边界，届时必须单独设计隐私提示与配置；当前不提前实现。
+启用 Remote Vision Provider 时，只有交给 Provider 的具体图片字节进入外部边界；完整 PPTX、native text/table/chart 和 workbook 不随请求上传。WPF UI 必须显示隐私提示并要求用户主动启用；API key 只在当前进程内存中使用，不由 DeckContext 持久化。OpenAI adapter 请求设置 `store=false`，但用户仍需遵守所选 API 服务本身的数据和合规政策。
 
 ---
 
@@ -643,7 +643,7 @@ Derived semantics 必须基于 source facts 或明确 Provider 输出，不得�
 8. diagnostics；
 9. minimal WPF conversion UI；
 10. image object extraction；
-11. 再决定 image pixel-content provider。
+11. 可选接入 image pixel-content provider，并验证失败时的局部降级。
 
 这只是实现顺序，不代表增加新的产品需求。
 
@@ -667,17 +667,10 @@ Derived semantics 必须基于 source facts 或明确 Provider 输出，不得�
 
 ---
 
-# 9. 尚未决策但已预留的唯一关键点
+# 9. 图片像素内容的可选能力
 
 ## 图片像素内容如何转文字
 
-当前已确认需求中存在一个待选择实现策略的问题：PPT 中作为图片存在的套餐截图、地图、图表截图等，如果要让 LLM 在没有图片上传能力的情况下理解其内容，需要 Image-to-Text/Vision 能力。
+PPT 中作为图片存在的套餐截图、地图、图表截图等，需要 Image-to-Text/Vision 才能成为纯文本 LLM 输入。V1 的落地方式是：核心解析器先可靠识别、提取和引用图片；用户可在单次转换中主动启用 OpenAI Responses provider，把每个唯一图片交给 multimodal model，获得结构化的 recognized text 与 visual description。
 
-架构已经通过 Provider 接口为其预留位置，但 **没有替用户决定**：
-
-- 是不是 V1 第一阶段必须实现；
-- 使用 OCR 还是 multimodal vision；
-- 本地还是云端；
-- 是否允许图片发送至外部 API。
-
-在这个决策明确之前，核心解析器只负责可靠识别、提取和引用图片，不虚构图片内部语义。
+Provider 输出带有明确来源，不替代图片对象和 OOXML provenance。未配置 Provider 时继续输出 NotAnalyzed；远程调用失败时仅将对应 image element 标为 Partial 并写入诊断。接口仍允许未来实现完全本地的 OCR/VLM 路径。

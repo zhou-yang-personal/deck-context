@@ -80,6 +80,48 @@
                   Content="Choose…" />
         </Grid>
 
+        <Border Margin="0,22,0,0"
+                Padding="16"
+                Background="White"
+                BorderBrush="#D8DEE9"
+                BorderThickness="1"
+                CornerRadius="6">
+          <StackPanel>
+            <CheckBox IsChecked="{Binding ImageAnalysisEnabled, Mode=TwoWay}"
+                      IsEnabled="{Binding CanChangePaths}"
+                      FontFamily="Segoe UI"
+                      FontSize="14"
+                      FontWeight="SemiBold"
+                      Content="Analyze extracted images with OpenAI Vision" />
+            <TextBlock Margin="24,6,0,12"
+                       FontFamily="Segoe UI"
+                       FontSize="12"
+                       Foreground="#B45309"
+                       TextWrapping="Wrap"
+                       Text="Optional and off by default. When enabled, extracted images are uploaded to the configured OpenAI model. The API key is used for this run only and is not saved." />
+            <Grid Margin="24,0,0,0" IsEnabled="{Binding ImageAnalysisEnabled}">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <TextBlock FontFamily="Segoe UI" FontSize="12" Foreground="#475569" Text="OPENAI API KEY" />
+                <PasswordBox Margin="0,5,0,0"
+                             Padding="10,8"
+                             FontFamily="Segoe UI"
+                             FontSize="14"
+                             PasswordChanged="VisionApiKey_PasswordChanged" />
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock FontFamily="Segoe UI" FontSize="12" Foreground="#475569" Text="VISION MODEL" />
+                <TextBox Margin="0,5,0,0"
+                         Text="{Binding VisionModel, UpdateSourceTrigger=PropertyChanged}" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+
         <Border Margin="0,24,0,0" Padding="18" Background="White" BorderBrush="#D8DEE9" BorderThickness="1" CornerRadius="6">
           <StackPanel>
             <Grid>

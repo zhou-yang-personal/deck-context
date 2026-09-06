@@ -16,14 +16,8 @@ public sealed class DeckContextMarkdownExporter
         builder.AppendLine();
         builder.AppendLine($"- Extraction status: `{document.Status}`");
         builder.AppendLine($"- Slides: {document.Deck.SlideCount}");
-
-        if (document.Deck.SlideWidthEmu is not null && document.Deck.SlideHeightEmu is not null)
-        {
-            builder.AppendLine(
-                $"- Slide canvas: {document.Deck.SlideWidthEmu} × {document.Deck.SlideHeightEmu} EMU");
-        }
-
         builder.AppendLine($"- Schema: `{document.SchemaVersion}`");
+        WriteExtractionSummary(builder, document);
 
         foreach (var slide in document.Slides.OrderBy(slide => slide.Metadata.Index))
         {
@@ -35,13 +29,30 @@ public sealed class DeckContextMarkdownExporter
         builder.AppendLine("## Extraction diagnostics");
         builder.AppendLine();
 
-        if (diagnostics.Length == 0)
+        var visibleDiagnostics = diagnostics
+            .Where(diagnostic => diagnostic.Code != "DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED")
+            .ToArray();
+        var unconfiguredImages = diagnostics
+            .Where(diagnostic => diagnostic.Code == "DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED")
+            .ToArray();
+
+        if (visibleDiagnostics.Length == 0 && unconfiguredImages.Length == 0)
         {
             builder.AppendLine("No extraction diagnostics were reported.");
         }
         else
         {
-            foreach (var diagnostic in diagnostics)
+            if (unconfiguredImages.Length > 0)
+            {
+                var imageCount = document.Slides
+                    .SelectMany(slide => slide.Elements)
+                    .Count(element => element.Image is not null);
+                builder.AppendLine(
+                    $"- `Information` `DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED` — " +
+                    $"{imageCount} image placement(s) were extracted without OCR/Vision pixel interpretation.");
+            }
+
+            foreach (var diagnostic in visibleDiagnostics)
             {
                 builder.AppendLine(
                     $"- `{diagnostic.Severity}` `{diagnostic.Code}` — {EscapeInline(diagnostic.Message)} " +
@@ -61,28 +72,29 @@ public sealed class DeckContextMarkdownExporter
         builder.AppendLine($"- Status: `{slide.Status}`");
         builder.AppendLine($"- Source part: `{slide.Metadata.PartUri ?? "unknown"}`");
 
-        var title = slide.Elements
-            .OrderBy(ElementOrderPath, ZOrderPathComparer.Instance)
-            .Where(element => element.Text is not null)
-            .Select(element => PlainText(element.Text!))
-            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+        var title = SelectTitle(slide);
 
         if (!string.IsNullOrWhiteSpace(title))
         {
-            builder.AppendLine($"- First text/title candidate: {EscapeInline(title)}");
+            builder.AppendLine($"- Title: {EscapeInline(title)}");
         }
 
         builder.AppendLine();
-        builder.AppendLine("### Objects in source order");
+        builder.AppendLine("### Extracted content");
 
-        if (slide.Elements.Count == 0)
+        var visibleElements = slide.Elements
+            .Where(ShouldIncludeInContext)
+            .OrderBy(ElementOrderPath, ZOrderPathComparer.Instance)
+            .ToArray();
+
+        if (visibleElements.Length == 0)
         {
             builder.AppendLine();
-            builder.AppendLine("No supported slide objects were found.");
+            builder.AppendLine("No semantic slide content was found.");
             return;
         }
 
-        foreach (var element in slide.Elements.OrderBy(ElementOrderPath, ZOrderPathComparer.Instance))
+        foreach (var element in visibleElements)
         {
             WriteElement(builder, element);
         }
@@ -95,25 +107,10 @@ public sealed class DeckContextMarkdownExporter
         builder.AppendLine(
             $"#### {orderLabel}. {element.Kind} — {EscapeInline(element.Identity.Name ?? "Unnamed object")}");
         builder.AppendLine();
-        builder.AppendLine(
-            $"- Source: slide {element.Source.SlideIndex?.ToString(CultureInfo.InvariantCulture) ?? "?"}, " +
-            $"object id `{element.Identity.Id ?? "unknown"}`, status `{element.Status}`");
 
-        if (element.ParentGroupId is not null)
+        if (element.Status != DeckContext.Domain.Extraction.ExtractionStatus.Succeeded)
         {
-            builder.AppendLine($"- Parent group id: `{element.ParentGroupId}`");
-        }
-
-        WriteGeometry(builder, element);
-
-        if (element.GroupTransform is not null)
-        {
-            var transform = element.GroupTransform;
-            builder.AppendLine(
-                $"- Group child coordinates: offset=({transform.ChildOffsetX}, {transform.ChildOffsetY}), " +
-                $"extent=({transform.ChildExtentWidth}, {transform.ChildExtentHeight}), " +
-                $"rotation={Format(transform.RotationDegrees ?? 0d)}°, " +
-                $"flipH={transform.FlipHorizontal is true}, flipV={transform.FlipVertical is true}");
+            builder.AppendLine($"- Extraction status: `{element.Status}`; source object `{element.Identity.Id ?? "unknown"}`");
         }
 
         if (element.Text is not null)
@@ -137,40 +134,31 @@ public sealed class DeckContextMarkdownExporter
         }
     }
 
-    private static void WriteGeometry(StringBuilder builder, SlideElementContext element)
-    {
-        if (element.NativeGeometry is not null)
-        {
-            var geometry = element.NativeGeometry;
-            builder.AppendLine(
-                $"- Geometry (EMU): x={geometry.X}, y={geometry.Y}, width={geometry.Width}, " +
-                $"height={geometry.Height}, space=`{geometry.CoordinateSpace}`");
-        }
-
-        if (element.NormalizedGeometry is not null)
-        {
-            var geometry = element.NormalizedGeometry;
-            builder.AppendLine(
-                $"- Normalized geometry: x={Format(geometry.X)}, y={Format(geometry.Y)}, " +
-                $"width={Format(geometry.Width)}, height={Format(geometry.Height)}");
-        }
-    }
-
     private static void WriteText(StringBuilder builder, TextContentContext text)
     {
+        var paragraphs = text.Paragraphs
+            .OrderBy(paragraph => paragraph.Index)
+            .Select(paragraph => new
+            {
+                paragraph.Index,
+                paragraph.Level,
+                Text = string.Concat(paragraph.Runs.Select(run => run.Text))
+            })
+            .Where(paragraph => !string.IsNullOrWhiteSpace(paragraph.Text))
+            .ToArray();
+
+        if (paragraphs.Length == 0)
+        {
+            return;
+        }
+
         builder.AppendLine("- Text:");
 
-        foreach (var paragraph in text.Paragraphs.OrderBy(paragraph => paragraph.Index))
+        foreach (var paragraph in paragraphs)
         {
-            var paragraphText = string.Concat(paragraph.Runs.Select(run => run.Text));
-
-            if (!string.IsNullOrEmpty(paragraphText))
-            {
-                builder.AppendLine(
-                    $"  - P{paragraph.Index + 1}" +
-                    (paragraph.Level is null ? string.Empty : $" (level {paragraph.Level})") +
-                    $": {EscapeInline(paragraphText)}");
-            }
+            builder.AppendLine(
+                $"  - {EscapeInline(paragraph.Text)}" +
+                (paragraph.Level is > 0 ? $" (level {paragraph.Level})" : string.Empty));
         }
     }
 
@@ -249,22 +237,12 @@ public sealed class DeckContextMarkdownExporter
             var workbook = chart.EmbeddedWorkbook;
             builder.AppendLine(
                 $"- Embedded workbook: `{workbook.PartUri}`; relationship `{workbook.RelationshipId}`; " +
-                $"SHA-256 `{workbook.Sha256}`; status `{workbook.Status}`");
+                $"status `{workbook.Status}`");
 
             foreach (var range in workbook.ReferencedRanges)
             {
                 builder.AppendLine(
                     $"  - `{range.Id}` → `{range.Formula}` ({range.WorksheetName}!{range.Address})");
-                builder.AppendLine();
-                builder.AppendLine("    | Cell | Raw value | Resolved value | Formula |");
-                builder.AppendLine("    | --- | --- | --- | --- |");
-
-                foreach (var cell in range.Cells)
-                {
-                    builder.AppendLine(
-                        $"    | {EscapeTable(cell.Reference)} | {EscapeTable(cell.RawValue)} | " +
-                        $"{EscapeTable(cell.ResolvedValue)} | {EscapeTable(cell.Formula)} |");
-                }
             }
         }
     }
@@ -279,7 +257,7 @@ public sealed class DeckContextMarkdownExporter
             return;
         }
 
-        var values = string.Join(", ", source.Points.Select(point => point.Value ?? "<missing>"));
+        var values = string.Join(", ", source.Points.Select(point => FormatChartPoint(point, source.NumberFormatCode)));
         builder.AppendLine(
             $"    - {label}: [{EscapeInline(values)}]" +
             FormatFormula(null, source.Formula, source.WorkbookRangeId));
@@ -293,9 +271,7 @@ public sealed class DeckContextMarkdownExporter
 
         if (image.Sha256 is not null)
         {
-            builder.AppendLine(
-                $"- Image asset: `{image.SuggestedFileName}`; `{image.ContentType}`; " +
-                $"{image.SizeBytes} bytes; SHA-256 `{image.Sha256}`");
+            builder.AppendLine($"- Image asset: `images/{image.SuggestedFileName}`");
         }
 
         if (image.AlternativeText is not null)
@@ -303,16 +279,168 @@ public sealed class DeckContextMarkdownExporter
             builder.AppendLine($"- Native alternative text: {EscapeInline(image.AlternativeText)}");
         }
 
-        if (image.Crop is not null)
+        if (image.Interpretation.Status == ImageContentInterpretationStatus.Succeeded)
+        {
+            builder.AppendLine($"- Pixel interpretation provider: `{image.Interpretation.ProviderId}`");
+
+            if (!string.IsNullOrWhiteSpace(image.Interpretation.Text))
+            {
+                builder.AppendLine("- Recognized text:");
+                builder.AppendLine($"  {EscapeInline(image.Interpretation.Text)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(image.Interpretation.Description))
+            {
+                builder.AppendLine("- Visual description:");
+                builder.AppendLine($"  {EscapeInline(image.Interpretation.Description)}");
+            }
+        }
+        else if (image.Interpretation.Status == ImageContentInterpretationStatus.Failed)
         {
             builder.AppendLine(
-                $"- Crop fractions: left={Format(image.Crop.LeftFraction)}, top={Format(image.Crop.TopFraction)}, " +
-                $"right={Format(image.Crop.RightFraction)}, bottom={Format(image.Crop.BottomFraction)}");
+                $"- Pixel interpretation failed via `{image.Interpretation.ProviderId}`: " +
+                EscapeInline(image.Interpretation.Description ?? "No provider error message was returned."));
+        }
+        else
+        {
+            builder.AppendLine("- Pixel content: not analyzed.");
+        }
+    }
+
+    private static void WriteExtractionSummary(StringBuilder builder, DeckContextDocument document)
+    {
+        var elements = document.Slides.SelectMany(slide => slide.Elements).ToArray();
+        var partialSlides = document.Slides.Count(slide =>
+            slide.Status == DeckContext.Domain.Extraction.ExtractionStatus.Partial);
+        var failedSlides = document.Slides.Count(slide =>
+            slide.Status == DeckContext.Domain.Extraction.ExtractionStatus.Failed);
+        var imageElements = elements.Where(element => element.Image is not null).ToArray();
+        var interpretedImages = imageElements.Count(element =>
+            element.Image!.Interpretation.Status == ImageContentInterpretationStatus.Succeeded);
+
+        builder.AppendLine(
+            $"- Summary: {document.Slides.Count - partialSlides - failedSlides} succeeded, " +
+            $"{partialSlides} partial, {failedSlides} failed slide(s); " +
+            $"{elements.Count(element => element.Chart is not null)} chart(s); " +
+            $"{elements.Count(element => element.Table is not null)} table(s); " +
+            $"{imageElements.Length} image placement(s), {interpretedImages} interpreted");
+    }
+
+    private static string? SelectTitle(SlideContext slide)
+    {
+        return slide.Elements
+            .Where(element => element.Text is not null)
+            .Select(element => new
+            {
+                Element = element,
+                Text = PlainText(element.Text!),
+                Score = TitleScore(element)
+            })
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Text))
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => ElementOrderPath(candidate.Element), ZOrderPathComparer.Instance)
+            .Select(candidate => candidate.Text)
+            .FirstOrDefault();
+    }
+
+    private static int TitleScore(SlideElementContext element)
+    {
+        var score = 0;
+        var name = element.Identity.Name ?? string.Empty;
+        var text = element.Text is null ? string.Empty : PlainText(element.Text);
+
+        if (name.Contains("subtitle", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("副标题", StringComparison.Ordinal))
+        {
+            score += 80;
+        }
+        else if (name.Contains("title", StringComparison.OrdinalIgnoreCase) ||
+                 name.Contains("标题", StringComparison.Ordinal))
+        {
+            score += 100;
         }
 
-        builder.AppendLine(image.Interpretation.Status == ImageContentInterpretationStatus.NotConfigured
-            ? "- Pixel content: not analyzed (no OCR/Vision provider configured)."
-            : $"- Pixel content status: `{image.Interpretation.Status}`; provider: `{image.Interpretation.ProviderId}`");
+        if (element.NormalizedGeometry is { } geometry)
+        {
+            if (geometry.Y <= 0.2)
+            {
+                score += 40;
+            }
+
+            if (geometry.Width >= 0.5)
+            {
+                score += 20;
+            }
+        }
+
+        var maximumFontSize = element.Text is null
+            ? 0
+            : element.Text.Paragraphs
+                .SelectMany(paragraph => paragraph.Runs)
+                .Select(run => run.DirectStyle?.FontSizePoints)
+                .Where(size => size is not null)
+                .Select(size => size!.Value)
+                .DefaultIfEmpty()
+                .Max();
+        if (maximumFontSize >= 24)
+        {
+            score += 20;
+        }
+
+        if (text.Length is >= 4 and <= 160)
+        {
+            score += 10;
+        }
+
+        if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+        {
+            score -= 50;
+        }
+
+        return score;
+    }
+
+    private static bool ShouldIncludeInContext(SlideElementContext element)
+    {
+        if (element.Table is not null || element.Chart is not null || element.Image is not null)
+        {
+            return true;
+        }
+
+        if (element.Text is not null && !string.IsNullOrWhiteSpace(PlainText(element.Text)))
+        {
+            return true;
+        }
+
+        return element.Diagnostics.Any(diagnostic =>
+            diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error);
+    }
+
+    private static string FormatChartPoint(ChartDataPointContext point, string? numberFormatCode)
+    {
+        if (point.NumericValue is null)
+        {
+            return point.Value ?? "<missing>";
+        }
+
+        var numericValue = point.NumericValue.Value;
+        if (!string.IsNullOrWhiteSpace(numberFormatCode) &&
+            numberFormatCode.Contains('%'))
+        {
+            return $"{FormatNumber(numericValue * 100)}%";
+        }
+
+        return FormatNumber(numericValue);
+    }
+
+    private static string FormatNumber(double value)
+    {
+        if (!double.IsFinite(value))
+        {
+            return value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return value.ToString("0.###############", CultureInfo.InvariantCulture);
     }
 
     private static string FormatFormula(string? label, string? formula, string? rangeId)
@@ -406,11 +534,6 @@ public sealed class DeckContextMarkdownExporter
     private static string EscapeTable(string? value)
     {
         return EscapeInline(value ?? string.Empty).Replace("|", "\\|", StringComparison.Ordinal);
-    }
-
-    private static string Format(double value)
-    {
-        return value.ToString("0.####", CultureInfo.InvariantCulture);
     }
 
     private static string Normalize(StringBuilder builder)

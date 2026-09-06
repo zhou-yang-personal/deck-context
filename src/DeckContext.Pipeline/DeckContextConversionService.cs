@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
+using DeckContext.Application.Contracts;
+using DeckContext.Domain.Diagnostics;
+using DeckContext.Domain.Extraction;
 using DeckContext.Domain.Model;
 using DeckContext.Export;
 using DeckContext.OpenXml;
@@ -20,13 +23,17 @@ public sealed record ContextPackageResult(
     string ManifestPath,
     IReadOnlyList<ContextPackageAsset> Assets);
 
+public sealed record DeckContextConversionOptions(
+    IImageTextProvider? ImageTextProvider = null);
+
 public interface IDeckContextConversionService
 {
     Task<ContextPackageResult> ConvertAsync(
         string sourcePath,
         string outputDirectory,
         IProgress<ConversionProgress>? progress = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        DeckContextConversionOptions? options = null);
 }
 
 public sealed class DeckContextConversionService : IDeckContextConversionService
@@ -37,20 +44,22 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
         string sourcePath,
         string outputDirectory,
         IProgress<ConversionProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DeckContextConversionOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
 
         return Task.Run(
-            () => Convert(sourcePath, outputDirectory, progress, cancellationToken),
+            () => ConvertAsync(sourcePath, outputDirectory, progress, options, cancellationToken),
             cancellationToken);
     }
 
-    private static ContextPackageResult Convert(
+    private static async Task<ContextPackageResult> ConvertAsync(
         string sourcePath,
         string outputDirectory,
         IProgress<ConversionProgress>? progress,
+        DeckContextConversionOptions? options,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -59,13 +68,19 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
 
         progress?.Report(new ConversionProgress(5, "Reading", "Reading PPTX package and relationships."));
         var readResult = new OpenXmlDeckContextReader().ReadPackage(fullSourcePath, cancellationToken);
-        var document = readResult.Document;
+        progress?.Report(new ConversionProgress(20, "Images", options?.ImageTextProvider is null
+            ? "Recording extracted images without pixel interpretation."
+            : $"Analyzing unique images with {options.ImageTextProvider.ProviderId}."));
+        var document = await ApplyImageInterpretationsAsync(
+            readResult,
+            options?.ImageTextProvider,
+            cancellationToken).ConfigureAwait(false);
         string? stagingDirectory = null;
 
         try
         {
             stagingDirectory = ContextPackageDirectoryPublisher.CreateStagingDirectory(fullOutputDirectory);
-            progress?.Report(new ConversionProgress(30, "Serializing", "Writing Markdown and JSON context."));
+            progress?.Report(new ConversionProgress(35, "Serializing", "Writing Markdown and JSON context."));
             var stagedMarkdownPath = Path.Combine(stagingDirectory, "deck.context.md");
             var stagedContextJsonPath = Path.Combine(stagingDirectory, "deck.context.json");
             var stagedExtractionReportPath = Path.Combine(stagingDirectory, "extraction-report.json");
@@ -170,6 +185,185 @@ public sealed class DeckContextConversionService : IDeckContextConversionService
         {
             ContextPackageDirectoryPublisher.DeleteStagingDirectory(stagingDirectory);
         }
+    }
+
+    private static async Task<DeckContextDocument> ApplyImageInterpretationsAsync(
+        OpenXmlDeckContextReadResult readResult,
+        IImageTextProvider? provider,
+        CancellationToken cancellationToken)
+    {
+        const string notConfiguredCode = "DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED";
+        var document = readResult.Document;
+        var imageElements = document.Slides
+            .SelectMany(slide => slide.Elements)
+            .Where(element => element.Image is not null)
+            .ToArray();
+
+        if (imageElements.Length == 0)
+        {
+            return document;
+        }
+
+        var uniqueInternalImages = imageElements
+            .Where(element => element.Image is { Sha256: not null, PartUri: not null, ContentType: not null })
+            .DistinctBy(element => element.Image!.Sha256, StringComparer.Ordinal)
+            .ToArray();
+        var interpretations = new Dictionary<string, ImageContentInterpretationContext>(StringComparer.Ordinal);
+
+        if (provider is not null)
+        {
+            var imageAssets = readResult.Assets
+                .Where(asset => asset.Kind == OpenXmlExtractedAssetKind.Image)
+                .ToDictionary(asset => asset.PartUri, StringComparer.Ordinal);
+
+            foreach (var element in uniqueInternalImages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var image = element.Image!;
+
+                if (!imageAssets.TryGetValue(image.PartUri!, out var asset))
+                {
+                    interpretations[image.Sha256!] = new ImageContentInterpretationContext(
+                        ImageContentInterpretationStatus.Failed,
+                        provider.ProviderId,
+                        null,
+                        "The extracted image bytes were unavailable for interpretation.");
+                    continue;
+                }
+
+                try
+                {
+                    interpretations[image.Sha256!] = await provider.AnalyzeAsync(
+                        new ImageTextRequest(
+                            image.ContentType!,
+                            image.PartUri!,
+                            asset.Content,
+                            element.Source),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    interpretations[image.Sha256!] = new ImageContentInterpretationContext(
+                        ImageContentInterpretationStatus.Failed,
+                        provider.ProviderId,
+                        null,
+                        $"The configured image provider failed: {exception.Message}");
+                }
+            }
+        }
+
+        var updatedSlides = document.Slides
+            .Select(slide => UpdateSlide(slide, provider, interpretations, notConfiguredCode))
+            .ToArray();
+        var deckDiagnostics = document.Diagnostics
+            .Where(diagnostic => diagnostic.Code != notConfiguredCode)
+            .ToList();
+
+        if (provider is null)
+        {
+            deckDiagnostics.Add(new ExtractionDiagnostic(
+                notConfiguredCode,
+                $"{imageElements.Length} image placement(s) referencing {uniqueInternalImages.Length} unique internal image(s) " +
+                "were extracted without OCR/Vision pixel interpretation.",
+                DiagnosticSeverity.Information,
+                "ImageInterpretationPipeline",
+                DiagnosticOutcome.None,
+                new SourceReference(document.Deck.SourceFileName, document.Deck.PresentationPartUri)));
+        }
+
+        var deckStatus = document.Status == ExtractionStatus.Partial ||
+                         updatedSlides.Any(slide => slide.Status is ExtractionStatus.Partial or ExtractionStatus.Failed)
+            ? ExtractionStatus.Partial
+            : document.Status == ExtractionStatus.Failed
+                ? ExtractionStatus.Failed
+                : ExtractionStatus.Succeeded;
+
+        return document with
+        {
+            Slides = updatedSlides,
+            Status = deckStatus,
+            Diagnostics = deckDiagnostics
+        };
+    }
+
+    private static SlideContext UpdateSlide(
+        SlideContext slide,
+        IImageTextProvider? provider,
+        IReadOnlyDictionary<string, ImageContentInterpretationContext> interpretations,
+        string notConfiguredCode)
+    {
+        var elements = slide.Elements
+            .Select(element => UpdateImageElement(element, provider, interpretations, notConfiguredCode))
+            .ToArray();
+        var status = slide.Status == ExtractionStatus.Partial || elements.Any(element =>
+            element.Status is ExtractionStatus.Partial or ExtractionStatus.Failed or ExtractionStatus.Unsupported)
+            ? ExtractionStatus.Partial
+            : slide.Status == ExtractionStatus.Failed
+                ? ExtractionStatus.Failed
+                : ExtractionStatus.Succeeded;
+
+        return slide with { Elements = elements, Status = status };
+    }
+
+    private static SlideElementContext UpdateImageElement(
+        SlideElementContext element,
+        IImageTextProvider? provider,
+        IReadOnlyDictionary<string, ImageContentInterpretationContext> interpretations,
+        string notConfiguredCode)
+    {
+        if (element.Image is null)
+        {
+            return element;
+        }
+
+        var diagnostics = element.Diagnostics
+            .Where(diagnostic => diagnostic.Code != notConfiguredCode)
+            .ToList();
+        var image = element.Image;
+
+        if (provider is null)
+        {
+            return element with { Diagnostics = diagnostics };
+        }
+
+        var interpretation = image.Sha256 is not null &&
+                             interpretations.TryGetValue(image.Sha256, out var resolvedInterpretation)
+            ? resolvedInterpretation
+            : new ImageContentInterpretationContext(
+                ImageContentInterpretationStatus.Failed,
+                provider.ProviderId,
+                null,
+                image.ExternalUri is not null
+                    ? "External linked image bytes were not available for interpretation."
+                    : "The image did not have extracted bytes or a stable hash for interpretation.");
+
+        var status = element.Status;
+        if (interpretation.Status != ImageContentInterpretationStatus.Succeeded)
+        {
+            diagnostics.Add(new ExtractionDiagnostic(
+                "DCX-IMAGE-TEXT-PROVIDER-FAILED",
+                interpretation.Description ?? "The configured OCR/Vision provider failed to interpret the image.",
+                DiagnosticSeverity.Warning,
+                provider.ProviderId,
+                DiagnosticOutcome.Partial,
+                element.Source));
+
+            if (status == ExtractionStatus.Succeeded)
+            {
+                status = ExtractionStatus.Partial;
+            }
+        }
+
+        return element with
+        {
+            Image = image with { Interpretation = interpretation },
+            Status = status,
+            Diagnostics = diagnostics
+        };
     }
 
     private static ContextPackageAsset CreateGeneratedAsset(

@@ -23,6 +23,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int progressPercentage;
     private bool isBusy;
     private bool hasCompleted;
+    private bool imageAnalysisEnabled;
+    private string visionApiKey = string.Empty;
+    private string visionModel = "gpt-5.6-luna";
 
     public MainWindowViewModel(IDeckContextConversionService conversionService)
     {
@@ -81,13 +84,55 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public bool CanConvert => !IsBusy && File.Exists(InputPath) &&
         string.Equals(Path.GetExtension(InputPath), ".pptx", StringComparison.OrdinalIgnoreCase) &&
-        !string.IsNullOrWhiteSpace(OutputDirectory);
+        !string.IsNullOrWhiteSpace(OutputDirectory) &&
+        (!ImageAnalysisEnabled ||
+         (!string.IsNullOrWhiteSpace(visionApiKey) && !string.IsNullOrWhiteSpace(VisionModel)));
 
     public bool CanOpenOutput => HasCompleted && Directory.Exists(OutputDirectory);
 
     public bool CanChangePaths => !IsBusy;
 
+    public bool ImageAnalysisEnabled
+    {
+        get => imageAnalysisEnabled;
+        set
+        {
+            if (IsBusy || !SetField(ref imageAnalysisEnabled, value))
+            {
+                return;
+            }
+
+            StatusMessage = value
+                ? "Image understanding enabled. Extracted images will be sent to OpenAI during conversion."
+                : "Image understanding disabled. PPTX extraction remains fully local.";
+            NotifyCommandState();
+        }
+    }
+
+    public string VisionModel
+    {
+        get => visionModel;
+        set
+        {
+            if (!IsBusy && SetField(ref visionModel, value))
+            {
+                NotifyCommandState();
+            }
+        }
+    }
+
     public ObservableCollection<DiagnosticDisplayItem> Diagnostics { get; } = [];
+
+    public void SetVisionApiKey(string value)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        visionApiKey = value;
+        NotifyCommandState();
+    }
 
     public void SetInputPath(string path)
     {
@@ -142,6 +187,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ProgressPercentage = 0;
         Diagnostics.Clear();
         var acceptsProgress = 1;
+        OpenAiImageTextProvider? imageTextProvider = null;
 
         try
         {
@@ -156,11 +202,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 StatusMessage = update.Message;
             });
 
+            if (ImageAnalysisEnabled)
+            {
+                imageTextProvider = new OpenAiImageTextProvider(visionApiKey, VisionModel);
+            }
+
             var result = await conversionService.ConvertAsync(
                 jobInputPath,
                 jobOutputDirectory,
                 progress,
-                cancellationToken);
+                cancellationToken,
+                new DeckContextConversionOptions(imageTextProvider));
             Interlocked.Exchange(ref acceptsProgress, 0);
             ProgressPercentage = 100;
             HasCompleted = true;
@@ -193,6 +245,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         finally
         {
+            imageTextProvider?.Dispose();
             Interlocked.Exchange(ref acceptsProgress, 0);
             IsBusy = false;
         }
@@ -203,6 +256,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanOpenOutput));
         OnPropertyChanged(nameof(CanChangePaths));
+        OnPropertyChanged(nameof(ImageAnalysisEnabled));
+        OnPropertyChanged(nameof(VisionModel));
     }
 
     private static string FormatLocation(SourceReference? source)

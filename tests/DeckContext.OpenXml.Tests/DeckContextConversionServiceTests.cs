@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using DeckContext.Application.Contracts;
 using DeckContext.Domain.Extraction;
+using DeckContext.Domain.Model;
 using DeckContext.Export;
 using DeckContext.Pipeline;
 
@@ -94,6 +96,69 @@ public sealed class DeckContextConversionServiceTests
             .GetProperty("entries")[0]
             .GetProperty("code")
             .GetString());
+    }
+
+    [Fact]
+    public async Task Convert_interprets_images_with_the_configured_provider()
+    {
+        using var directory = new TemporaryDirectory();
+        var sourcePath = PresentationFixture.CreateImage(directory.Path);
+        var output = Path.Combine(directory.Path, "vision-output");
+        var provider = new FakeImageTextProvider();
+
+        var result = await new DeckContextConversionService().ConvertAsync(
+            sourcePath,
+            output,
+            cancellationToken: TestContext.Current.CancellationToken,
+            options: new DeckContextConversionOptions(provider));
+
+        Assert.Equal(1, provider.CallCount);
+        var element = Assert.Single(
+            result.Document.Slides[0].Elements,
+            candidate => candidate.Image is not null);
+        var image = element.Image!;
+        Assert.Equal(ImageContentInterpretationStatus.Succeeded, image.Interpretation.Status);
+        Assert.Equal("fake-vision:test", image.Interpretation.ProviderId);
+        Assert.Equal("recognized words", image.Interpretation.Text);
+        Assert.Equal("a structured diagram", image.Interpretation.Description);
+
+        var markdown = await File.ReadAllTextAsync(
+            result.MarkdownPath,
+            TestContext.Current.CancellationToken);
+        Assert.Contains("Recognized text", markdown, StringComparison.Ordinal);
+        Assert.Contains("a structured diagram", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pixel content: not analyzed", markdown, StringComparison.Ordinal);
+
+        var report = await File.ReadAllTextAsync(
+            result.ExtractionReportPath,
+            TestContext.Current.CancellationToken);
+        Assert.DoesNotContain("DCX-IMAGE-TEXT-PROVIDER-NOT-CONFIGURED", report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Convert_records_provider_failure_without_losing_the_image_asset()
+    {
+        using var directory = new TemporaryDirectory();
+        var sourcePath = PresentationFixture.CreateImage(directory.Path);
+        var output = Path.Combine(directory.Path, "failed-vision-output");
+        var provider = new FailedImageTextProvider();
+
+        var result = await new DeckContextConversionService().ConvertAsync(
+            sourcePath,
+            output,
+            cancellationToken: TestContext.Current.CancellationToken,
+            options: new DeckContextConversionOptions(provider));
+
+        Assert.Equal(ExtractionStatus.Partial, result.Document.Status);
+        var imageElement = Assert.Single(
+            result.Document.Slides[0].Elements,
+            element => element.Image is not null);
+        Assert.Equal(ExtractionStatus.Partial, imageElement.Status);
+        Assert.Equal(ImageContentInterpretationStatus.Failed, imageElement.Image!.Interpretation.Status);
+        Assert.Contains(
+            imageElement.Diagnostics,
+            diagnostic => diagnostic.Code == "DCX-IMAGE-TEXT-PROVIDER-FAILED");
+        Assert.True(File.Exists(Path.Combine(output, "images", "image1.png")));
     }
 
     [Fact]
@@ -256,6 +321,44 @@ public sealed class DeckContextConversionServiceTests
             await File.ReadAllTextAsync(Path.Combine(output, "manifest.json"), TestContext.Current.CancellationToken));
         Assert.True(File.Exists(Path.Combine(output, "images", "image1.png")));
         Assert.False(Directory.Exists(Path.Combine(output, "workbooks")));
+    }
+
+    private sealed class FakeImageTextProvider : IImageTextProvider
+    {
+        public int CallCount { get; private set; }
+
+        public string ProviderId => "fake-vision:test";
+
+        public Task<ImageContentInterpretationContext> AnalyzeAsync(
+            ImageTextRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            Assert.NotEmpty(request.Content.ToArray());
+            return Task.FromResult(new ImageContentInterpretationContext(
+                ImageContentInterpretationStatus.Succeeded,
+                ProviderId,
+                "recognized words",
+                "a structured diagram"));
+        }
+    }
+
+    private sealed class FailedImageTextProvider : IImageTextProvider
+    {
+        public string ProviderId => "fake-vision:failed";
+
+        public Task<ImageContentInterpretationContext> AnalyzeAsync(
+            ImageTextRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new ImageContentInterpretationContext(
+                ImageContentInterpretationStatus.Failed,
+                ProviderId,
+                null,
+                "Provider unavailable."));
+        }
     }
 
     private sealed class CallbackProgress(Action<ConversionProgress> callback) : IProgress<ConversionProgress>

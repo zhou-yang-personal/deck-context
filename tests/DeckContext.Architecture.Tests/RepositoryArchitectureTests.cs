@@ -55,6 +55,7 @@ public sealed class RepositoryArchitectureTests
             "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj");
         AssertProjectReferences(
             "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj",
+            "src/DeckContext.Application/DeckContext.Application.csproj",
             "src/DeckContext.Domain/DeckContext.Domain.csproj",
             "src/DeckContext.Export/DeckContext.Export.csproj",
             "src/DeckContext.OpenXml/DeckContext.OpenXml.csproj");
