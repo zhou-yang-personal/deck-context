@@ -72,7 +72,7 @@ public sealed class MainWindowViewModelTests
 
         viewModel.ImageAnalysisEnabled = true;
         Assert.False(viewModel.CanConvert);
-        Assert.Contains("uploaded", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("sent to OpenAI", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
 
         viewModel.SetVisionApiKey("test-key");
         Assert.True(viewModel.CanConvert);

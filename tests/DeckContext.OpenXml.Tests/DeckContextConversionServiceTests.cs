@@ -183,7 +183,7 @@ public sealed class DeckContextConversionServiceTests
         Assert.Equal(3, workbookAsset.SizeBytes);
 
         var markdown = await File.ReadAllTextAsync(result.MarkdownPath, TestContext.Current.CancellationToken);
-        Assert.Contains("status `Partial`", markdown, StringComparison.Ordinal);
+        Assert.Contains("Extraction status: `Partial`", markdown, StringComparison.Ordinal);
         var report = await File.ReadAllTextAsync(result.ExtractionReportPath, TestContext.Current.CancellationToken);
         Assert.Contains("DCX-WORKBOOK-READ-FAILED", report, StringComparison.Ordinal);
     }

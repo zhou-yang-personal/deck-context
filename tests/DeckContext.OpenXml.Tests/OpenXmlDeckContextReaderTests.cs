@@ -146,10 +146,8 @@ public sealed class OpenXmlDeckContextReaderTests
         var markdown = new DeckContextMarkdownExporter().Serialize(document);
         Assert.True(
             markdown.IndexOf("Before Group", StringComparison.Ordinal) <
-            markdown.IndexOf("Evidence Group", StringComparison.Ordinal));
-        Assert.True(
-            markdown.IndexOf("Evidence Group", StringComparison.Ordinal) <
             markdown.IndexOf("Grouped Text", StringComparison.Ordinal));
+        Assert.DoesNotContain("Evidence Group", markdown, StringComparison.Ordinal);
         Assert.Contains("#### 2.1. Shape", markdown, StringComparison.Ordinal);
     }
 
