@@ -26,7 +26,7 @@ The V1 baseline focuses on:
 - machine-readable JSON output;
 - extraction diagnostics and traceability.
 
-The current machine-readable context schema is `0.3`; it adds OCR quality assessment and Markdown publication decisions while retaining bounded raw OCR in JSON. Schema `0.2` added hierarchical group ordering/transforms and bubble-chart size data to the original `0.1` contract.
+The current machine-readable context schema is `0.4`; it separates line-filtered Markdown OCR from bounded raw OCR evidence in JSON. Schema `0.3` added OCR quality assessment and Markdown publication decisions, while `0.2` added hierarchical group ordering/transforms and bubble-chart size data to the original `0.1` contract.
 
 ## Architecture Direction
 
@@ -74,6 +74,8 @@ Download and unzip the latest `DeckContext-dev-win-x64-{short-sha}` artifact, th
 
 Extract the complete artifact before launching; the executable depends on the DLLs beside it. If managed application startup fails, DeckContext shows the error and writes details to `%LOCALAPPDATA%\DeckContext\Logs\application-errors.log`.
 
+The current desktop workflow processes one PowerPoint file at a time; the verification command likewise processes one input file per invocation. A batch queue is not part of the current V1 implementation.
+
 Select or drop a `.pptx`, optionally choose an output folder, then select **Extract context**. The generated package contains:
 
 - `deck.context.md` — readable deck/slide/object context for humans and LLMs;
@@ -83,7 +85,7 @@ Select or drop a `.pptx`, optionally choose an output folder, then select **Extr
 - `workbooks\` — exact embedded workbook assets when present;
 - `images\` — exact internal image media when present.
 
-Image OCR is enabled by default and remains fully local. The package includes Tesseract 5 plus `tessdata_fast` models for Simplified Chinese, English, and Spanish; no account, API key, network access, PowerPoint, or separate OCR installation is required. Disable **Recognize text inside images with offline OCR** when only native PPTX structure and extracted assets are needed. OCR transcribes visible text; it does not invent a semantic description of photos, maps, or diagrams. A combined confidence/structure filter keeps likely Logo, icon, photo, and map noise out of Markdown; bounded raw OCR and the quality decision remain in JSON for traceability. Reused image-and-crop inputs emit their transcription only once in Markdown.
+Image OCR is enabled by default and remains fully local. The package includes Tesseract 5 plus `tessdata_fast` models for Simplified Chinese, English, and Spanish; no account, API key, network access, PowerPoint, or separate OCR installation is required. Disable **Recognize text inside images with offline OCR** when only native PPTX structure and extracted assets are needed. OCR transcribes visible text; it does not invent a semantic description of photos, maps, or diagrams. Confidence, line structure, and character-noise filters keep likely Logo, icon, photo, and map fragments out of Markdown; low-quality and empty results are summarized once rather than repeated per image. Bounded raw OCR, the line-filtered publication text, and the quality decision remain in JSON for traceability. Reused image-and-crop inputs emit their transcription only once in Markdown, and published OCR is capped at 500 characters per unique image/crop.
 
 DeckContext publishes the package through a sibling staging directory and replaces an existing output only when it is empty or is an intact DeckContext-owned package. Choose a new or empty directory when exporting into a location that contains unrelated files.
 

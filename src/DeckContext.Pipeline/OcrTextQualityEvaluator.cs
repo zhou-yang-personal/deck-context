@@ -6,6 +6,7 @@ namespace DeckContext.Pipeline;
 internal static class OcrTextQualityEvaluator
 {
     internal const int MaximumStoredCharacters = 6000;
+    internal const int MaximumFilteredCharacters = 2000;
 
     public static OcrTextEvaluation Evaluate(string? text, double meanConfidence)
     {
@@ -35,13 +36,25 @@ internal static class OcrTextQualityEvaluator
         }
 
         var wasTruncated = normalized.Length > MaximumStoredCharacters;
-        var storedText = wasTruncated
-            ? $"{normalized[..MaximumStoredCharacters].TrimEnd()}…"
-            : normalized;
-        var nonWhitespace = normalized.Count(character => !char.IsWhiteSpace(character));
-        var meaningful = normalized.Count(char.IsLetterOrDigit);
+        var storedText = Bound(normalized, MaximumStoredCharacters);
+        var filteredText = BuildMarkdownText(normalized);
+
+        if (filteredText is null)
+        {
+            return new OcrTextEvaluation(
+                storedText,
+                new ImageTextAssessmentContext(
+                    meanConfidence,
+                    ImageTextQuality.Low,
+                    false,
+                    "No OCR line met the minimum continuous-text structure.",
+                    wasTruncated));
+        }
+
+        var nonWhitespace = filteredText.Count(character => !char.IsWhiteSpace(character));
+        var meaningful = filteredText.Count(char.IsLetterOrDigit);
         var meaningfulRatio = nonWhitespace == 0 ? 0 : (double)meaningful / nonWhitespace;
-        var tokens = normalized.Split(
+        var tokens = filteredText.Split(
             (char[]?)null,
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var singleCharacterTokens = tokens.Count(token => token.Count(char.IsLetterOrDigit) <= 1);
@@ -54,7 +67,8 @@ internal static class OcrTextQualityEvaluator
             meaningful,
             meaningfulRatio,
             tokens.Length,
-            singleCharacterRatio);
+            singleCharacterRatio,
+            filteredText.Count(IsCjk));
         if (reason is not null)
         {
             return new OcrTextEvaluation(
@@ -67,8 +81,9 @@ internal static class OcrTextQualityEvaluator
                     wasTruncated));
         }
 
-        var quality = meanConfidence >= 0.82 && meaningful >= 12 && meaningfulRatio >= 0.7 &&
-                      singleCharacterRatio <= 0.25
+        var markdownText = Bound(filteredText, MaximumFilteredCharacters);
+        var quality = meanConfidence >= 0.82 && meaningful >= 20 && meaningfulRatio >= 0.72 &&
+                      singleCharacterRatio <= 0.15
             ? ImageTextQuality.High
             : ImageTextQuality.Medium;
         return new OcrTextEvaluation(
@@ -78,7 +93,8 @@ internal static class OcrTextQualityEvaluator
                 quality,
                 true,
                 null,
-                wasTruncated));
+                wasTruncated,
+                markdownText));
     }
 
     private static string? RejectReason(
@@ -86,40 +102,92 @@ internal static class OcrTextQualityEvaluator
         int meaningfulCharacters,
         double meaningfulRatio,
         int tokenCount,
-        double singleCharacterRatio)
+        double singleCharacterRatio,
+        int cjkCharacters)
     {
-        if (meaningfulCharacters < 6)
+        if (meanConfidence < 0.6)
         {
-            return "Too few letters or digits were recognized to form useful context.";
+            return "Mean OCR confidence was below 60%.";
         }
 
-        if (meanConfidence < 0.5)
+        if (meaningfulCharacters < 12)
         {
-            return "Mean OCR confidence was below 50%.";
+            return "Too few letters or digits remained after line-level noise filtering.";
         }
 
-        if (meaningfulRatio < 0.55)
+        if (meaningfulRatio < 0.62)
         {
             return "The result contained too much punctuation or symbol noise.";
         }
 
-        if (tokenCount == 1 && meanConfidence < 0.85)
-        {
-            return "A single short label with limited confidence is likely to be a logo or icon artifact.";
-        }
-
-        if (tokenCount >= 8 && singleCharacterRatio > 0.45)
+        if (singleCharacterRatio > 0.25)
         {
             return "Too many isolated single-character tokens indicate visual noise rather than continuous text.";
         }
 
-        if (meanConfidence < 0.6 && (tokenCount < 3 || singleCharacterRatio > 0.25))
+        if (meanConfidence < 0.75 &&
+            (meaningfulCharacters < 24 || (tokenCount < 5 && cjkCharacters < 6)))
         {
-            return "The low-confidence result lacked enough continuous text structure.";
+            return "Medium-confidence OCR lacked enough continuous text to publish safely.";
         }
 
         return null;
     }
+
+    private static string? BuildMarkdownText(string normalized)
+    {
+        var usefulLines = normalized
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(IsUsefulLine)
+            .ToArray();
+        return usefulLines.Length == 0 ? null : string.Join(Environment.NewLine, usefulLines);
+    }
+
+    private static bool IsUsefulLine(string line)
+    {
+        var nonWhitespace = line.Count(character => !char.IsWhiteSpace(character));
+        var meaningful = line.Count(char.IsLetterOrDigit);
+        var meaningfulRatio = nonWhitespace == 0 ? 0 : (double)meaningful / nonWhitespace;
+        var cjkCharacters = line.Count(IsCjk);
+
+        if (cjkCharacters >= 4)
+        {
+            return meaningfulRatio >= 0.62;
+        }
+
+        var tokens = line.Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (meaningful < 12 || meaningfulRatio < 0.62 || tokens.Length < 3)
+        {
+            return false;
+        }
+
+        var tokenLengths = tokens
+            .Select(token => token.Count(char.IsLetterOrDigit))
+            .ToArray();
+        if (tokens.Length == 3 &&
+            (meaningful < 16 ||
+             !tokens.Any(token => token.Any(char.IsDigit)) ||
+             !tokens.Any(token => token.Count(char.IsLetter) >= 6)))
+        {
+            return false;
+        }
+
+        var singleCharacterRatio = (double)tokenLengths.Count(length => length <= 1) / tokenLengths.Length;
+        var averageTokenLength = (double)tokenLengths.Sum() / tokenLengths.Length;
+        return singleCharacterRatio <= 0.2 && averageTokenLength >= 2.5;
+    }
+
+    private static bool IsCjk(char character) =>
+        character is >= '\u3400' and <= '\u4DBF' or
+            >= '\u4E00' and <= '\u9FFF' or
+            >= '\uF900' and <= '\uFAFF';
+
+    private static string Bound(string value, int maximumCharacters) =>
+        value.Length > maximumCharacters
+            ? $"{value[..maximumCharacters].TrimEnd()}…"
+            : value;
 
     private static string? Normalize(string value)
     {

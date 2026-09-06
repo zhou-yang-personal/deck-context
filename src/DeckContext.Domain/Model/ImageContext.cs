@@ -23,7 +23,8 @@ public sealed record ImageTextAssessmentContext(
     ImageTextQuality Quality,
     bool IncludeInMarkdown,
     string? Reason,
-    bool WasTruncated);
+    bool WasTruncated,
+    string? MarkdownText = null);
 
 public sealed record ImageCropContext(
     int LeftRaw,

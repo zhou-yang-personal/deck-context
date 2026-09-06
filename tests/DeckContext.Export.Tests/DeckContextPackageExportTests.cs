@@ -124,7 +124,7 @@ public sealed class DeckContextPackageExportTests
     }
 
     [Fact]
-    public void Markdown_omits_low_quality_ocr_but_reports_analyzed_and_usable_counts()
+    public void Markdown_omits_per_image_low_quality_ocr_but_reports_the_publication_policy_once()
     {
         var document = TestDocumentFactory.CreateRich();
         var slide = document.Slides[0];
@@ -149,9 +149,12 @@ public sealed class DeckContextPackageExportTests
         var markdown = new DeckContextMarkdownExporter().Serialize(
             document with { Slides = [slide with { Elements = updatedElements }] });
 
-        Assert.Contains("1 image placement(s), 1 analyzed, 0 with usable text", markdown, StringComparison.Ordinal);
-        Assert.Contains("low-quality text omitted from Markdown", markdown, StringComparison.Ordinal);
+        Assert.Contains("1 image placement(s), 1 analyzed, 0 passed OCR quality filter", markdown, StringComparison.Ordinal);
+        Assert.Contains("low-quality or empty OCR stays in `deck.context.json`", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("A / y / | / NN", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("OCR provider", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("OCR quality", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Mean OCR confidence", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("Visual description", markdown, StringComparison.Ordinal);
     }
 
@@ -194,7 +197,64 @@ public sealed class DeckContextPackageExportTests
             });
 
         Assert.Equal(1, CountOccurrences(markdown, "Internet Fibra 850 Mbps Precio regular 119"));
-        Assert.Contains("same image and crop as an earlier placement", markdown, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(markdown, "OCR: `High`"));
+        Assert.DoesNotContain("same image and crop as an earlier placement", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Markdown_caps_published_ocr_while_json_can_retain_the_fuller_text()
+    {
+        var document = TestDocumentFactory.CreateRich();
+        var slide = document.Slides[0];
+        var imageElement = slide.Elements.Single(element => element.Image is not null);
+        var rawText = string.Join(' ', Enumerable.Repeat("InternetFibra", 80));
+        var interpretation = new ImageContentInterpretationContext(
+            ImageContentInterpretationStatus.Succeeded,
+            "tesseract-local:chi_sim+eng+spa",
+            rawText,
+            null,
+            new ImageTextAssessmentContext(
+                0.91,
+                ImageTextQuality.High,
+                true,
+                null,
+                false,
+                rawText));
+        var updatedElements = slide.Elements
+            .Select(element => element == imageElement
+                ? element with { Image = element.Image! with { Interpretation = interpretation } }
+                : element)
+            .ToArray();
+
+        var markdown = new DeckContextMarkdownExporter().Serialize(
+            document with { Slides = [slide with { Elements = updatedElements }] });
+
+        Assert.Contains("Recognized text (truncated for Markdown", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain(rawText, markdown, StringComparison.Ordinal);
+        Assert.True(markdown.Length < rawText.Length + 4000);
+    }
+
+    [Theory]
+    [InlineData("Picture 19")]
+    [InlineData("图片 104")]
+    [InlineData("https://example.com/logo.png")]
+    [InlineData("C:\\Users\\name\\image.png")]
+    [InlineData("\\\\server\\share\\image.png")]
+    public void Markdown_omits_generic_or_path_like_native_alternative_text(string alternativeText)
+    {
+        var document = TestDocumentFactory.CreateRich();
+        var slide = document.Slides[0];
+        var imageElement = slide.Elements.Single(element => element.Image is not null);
+        var updatedElements = slide.Elements
+            .Select(element => element == imageElement
+                ? element with { Image = element.Image! with { AlternativeText = alternativeText } }
+                : element)
+            .ToArray();
+
+        var markdown = new DeckContextMarkdownExporter().Serialize(
+            document with { Slides = [slide with { Elements = updatedElements }] });
+
+        Assert.DoesNotContain("Native alternative text", markdown, StringComparison.Ordinal);
     }
 
     [Fact]

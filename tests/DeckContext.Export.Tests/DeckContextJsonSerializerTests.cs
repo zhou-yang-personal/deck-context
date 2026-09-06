@@ -32,7 +32,7 @@ public sealed class DeckContextJsonSerializerTests
 
         using var json = JsonDocument.Parse(first);
         var root = json.RootElement;
-        Assert.Equal("0.3", root.GetProperty("schemaVersion").GetString());
+        Assert.Equal("0.4", root.GetProperty("schemaVersion").GetString());
         Assert.Equal("sample.pptx", root.GetProperty("deck").GetProperty("sourceFileName").GetString());
         Assert.Equal("succeeded", root.GetProperty("status").GetString());
         Assert.Equal(1, root.GetProperty("slides").GetArrayLength());
@@ -228,5 +228,46 @@ public sealed class DeckContextJsonSerializerTests
         Assert.Equal("A / y / | / NN", interpretation.GetProperty("text").GetString());
         Assert.Equal("low", interpretation.GetProperty("textAssessment").GetProperty("quality").GetString());
         Assert.False(interpretation.GetProperty("textAssessment").GetProperty("includeInMarkdown").GetBoolean());
+    }
+
+    [Fact]
+    public void Serialize_preserves_the_filtered_markdown_text_separately_from_raw_ocr()
+    {
+        var document = TestDocumentFactory.CreateRich();
+        var slide = document.Slides[0];
+        var imageElement = slide.Elements.Single(element => element.Image is not null);
+        var interpretation = new ImageContentInterpretationContext(
+            ImageContentInterpretationStatus.Succeeded,
+            "tesseract-local:chi_sim+eng+spa",
+            "win\nEL INTERNET DE LOS WINNERS\nA",
+            null,
+            new ImageTextAssessmentContext(
+                0.91,
+                ImageTextQuality.High,
+                true,
+                null,
+                false,
+                "EL INTERNET DE LOS WINNERS"));
+        var updatedElements = slide.Elements
+            .Select(element => element == imageElement
+                ? element with { Image = element.Image! with { Interpretation = interpretation } }
+                : element)
+            .ToArray();
+
+        var jsonText = new DeckContextJsonSerializer().Serialize(
+            document with { Slides = [slide with { Elements = updatedElements }] });
+
+        using var json = JsonDocument.Parse(jsonText);
+        var serializedInterpretation = json.RootElement
+            .GetProperty("slides")[0]
+            .GetProperty("elements")
+            .EnumerateArray()
+            .Single(element => element.TryGetProperty("image", out _))
+            .GetProperty("image")
+            .GetProperty("interpretation");
+        Assert.Contains("win", serializedInterpretation.GetProperty("text").GetString(), StringComparison.Ordinal);
+        Assert.Equal(
+            "EL INTERNET DE LOS WINNERS",
+            serializedInterpretation.GetProperty("textAssessment").GetProperty("markdownText").GetString());
     }
 }

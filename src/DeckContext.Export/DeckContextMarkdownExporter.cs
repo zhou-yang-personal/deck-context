@@ -7,7 +7,7 @@ namespace DeckContext.Export;
 
 public sealed class DeckContextMarkdownExporter
 {
-    private const int MaximumMarkdownOcrCharacters = 2000;
+    private const int MaximumMarkdownOcrCharacters = 500;
 
     public string Serialize(DeckContextDocument document)
     {
@@ -286,9 +286,9 @@ public sealed class DeckContextMarkdownExporter
             builder.AppendLine($"- Image asset: `images/{image.SuggestedFileName}`");
         }
 
-        if (image.AlternativeText is not null)
+        if (IsUsefulAlternativeText(image.AlternativeText))
         {
-            builder.AppendLine($"- Native alternative text: {EscapeInline(image.AlternativeText)}");
+            builder.AppendLine($"- Native alternative text: {EscapeInline(image.AlternativeText!)}");
         }
 
         if (image.Interpretation.Status == ImageContentInterpretationStatus.Succeeded)
@@ -332,42 +332,25 @@ public sealed class DeckContextMarkdownExporter
     {
         var interpretation = image.Interpretation;
         var assessment = interpretation.TextAssessment;
-        builder.AppendLine($"- OCR provider: `{interpretation.ProviderId}`");
-
-        if (assessment is not null)
-        {
-            builder.AppendLine(
-                $"- OCR quality: `{assessment.Quality}`; mean confidence " +
-                (assessment.MeanConfidence is null
-                    ? "unknown"
-                    : $"{assessment.MeanConfidence.Value * 100:0.#}%"));
-        }
-
-        if (string.IsNullOrWhiteSpace(interpretation.Text))
-        {
-            builder.AppendLine("- OCR result: no reliable text detected.");
-            return;
-        }
-
-        if (assessment is { IncludeInMarkdown: false })
-        {
-            builder.AppendLine(
-                "- OCR result: low-quality text omitted from Markdown; " +
-                "the bounded raw OCR result remains in `deck.context.json`." +
-                (string.IsNullOrWhiteSpace(assessment.Reason)
-                    ? string.Empty
-                    : $" Reason: {EscapeInline(assessment.Reason)}"));
-            return;
-        }
-
         var interpretationKey = ImageInterpretationKey(image);
         if (!emittedImageInterpretations.Add(interpretationKey))
         {
-            builder.AppendLine("- OCR result: same image and crop as an earlier placement; transcription omitted here.");
             return;
         }
 
-        var markdownText = interpretation.Text;
+        var markdownText = assessment?.MarkdownText ?? interpretation.Text;
+        if (assessment is { IncludeInMarkdown: false } || string.IsNullOrWhiteSpace(markdownText))
+        {
+            return;
+        }
+
+        builder.AppendLine(
+            $"- OCR: `{assessment?.Quality ?? ImageTextQuality.Unknown}`, " +
+            (assessment?.MeanConfidence is null
+                ? "confidence unknown"
+                : $"{assessment.MeanConfidence.Value * 100:0.#}% confidence") +
+            $" via `{interpretation.ProviderId}`");
+
         var truncatedForMarkdown = markdownText.Length > MaximumMarkdownOcrCharacters;
         if (truncatedForMarkdown)
         {
@@ -382,6 +365,31 @@ public sealed class DeckContextMarkdownExporter
 
     private static bool IsTesseract(string? providerId) =>
         providerId?.StartsWith("tesseract-local:", StringComparison.Ordinal) == true;
+
+    private static bool IsUsefulAlternativeText(string? alternativeText)
+    {
+        if (string.IsNullOrWhiteSpace(alternativeText))
+        {
+            return false;
+        }
+
+        var value = alternativeText.Trim();
+        if (value.Length < 4 ||
+            value.StartsWith("\\\\", StringComparison.Ordinal) ||
+            value.Contains("://", StringComparison.Ordinal) ||
+            (value.Length >= 3 && char.IsLetter(value[0]) && value[1] == ':' &&
+             value[2] is '\\' or '/'))
+        {
+            return false;
+        }
+
+        var compact = new string(value.Where(character => !char.IsWhiteSpace(character)).ToArray());
+        var prefixes = new[] { "picture", "image", "graphic", "图片", "图形", "照片" };
+        return !prefixes.Any(prefix =>
+            compact.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            compact[prefix.Length..].Length > 0 &&
+            compact[prefix.Length..].All(char.IsDigit));
+    }
 
     private static string ImageInterpretationKey(ImageContext image)
     {
@@ -403,10 +411,13 @@ public sealed class DeckContextMarkdownExporter
         var imageElements = elements.Where(element => element.Image is not null).ToArray();
         var analyzedImages = imageElements.Count(element =>
             element.Image!.Interpretation.Status == ImageContentInterpretationStatus.Succeeded);
-        var usableTextImages = imageElements.Count(element =>
+        var passedOcrImages = imageElements.Count(element =>
             element.Image!.Interpretation.Status == ImageContentInterpretationStatus.Succeeded &&
-            !string.IsNullOrWhiteSpace(element.Image.Interpretation.Text) &&
-            element.Image.Interpretation.TextAssessment?.IncludeInMarkdown != false);
+            IsTesseract(element.Image.Interpretation.ProviderId) &&
+            element.Image.Interpretation.TextAssessment?.IncludeInMarkdown == true &&
+            !string.IsNullOrWhiteSpace(
+                element.Image.Interpretation.TextAssessment!.MarkdownText ??
+                element.Image.Interpretation.Text));
 
         builder.AppendLine(
             $"- Summary: {document.Slides.Count - partialSlides - failedSlides} succeeded, " +
@@ -414,7 +425,16 @@ public sealed class DeckContextMarkdownExporter
             $"{elements.Count(element => element.Chart is not null)} chart(s); " +
             $"{elements.Count(element => element.Table is not null)} table(s); " +
             $"{imageElements.Length} image placement(s), {analyzedImages} analyzed, " +
-            $"{usableTextImages} with usable text");
+            $"{passedOcrImages} passed OCR quality filter");
+
+        if (imageElements.Any(element =>
+                element.Image!.Interpretation.Status == ImageContentInterpretationStatus.Succeeded &&
+                IsTesseract(element.Image.Interpretation.ProviderId)))
+        {
+            builder.AppendLine(
+                "- OCR publication: low-quality or empty OCR stays in `deck.context.json` " +
+                "and is omitted from slide content below.");
+        }
     }
 
     private static string? SelectTitle(SlideContext slide)
