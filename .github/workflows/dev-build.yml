@@ -78,22 +78,12 @@ jobs:
           Copy-Item "artifacts/ocr" (Join-Path $packageDirectory "ocr") -Recurse
           Copy-Item "packaging/THIRD-PARTY-NOTICES.txt" $packageDirectory
 
-          $visualStudioRoots = @(
-            (Join-Path $env:ProgramFiles "Microsoft Visual Studio/2022")
-            (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/2022")
-          ) | Where-Object { Test-Path $_ -PathType Container }
-          $crtDirectory = $visualStudioRoots |
-            ForEach-Object { Get-ChildItem $_ -Recurse -Directory -Filter "Microsoft.VC143.CRT" } |
-            Where-Object { $_.FullName -match "[\\/]x64[\\/]" } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-
-          if ($null -eq $crtDirectory) {
-            throw "The Visual C++ x64 redistributable directory was not found on the runner."
-          }
+          # windows-latest is x64, so System32 contains the x64 VC runtime that
+          # loaded the native Tesseract binaries during the preceding test step.
+          $crtDirectory = Join-Path $env:WINDIR "System32"
 
           foreach ($fileName in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
-            $sourcePath = Join-Path $crtDirectory.FullName $fileName
+            $sourcePath = Join-Path $crtDirectory $fileName
             if (-not (Test-Path $sourcePath -PathType Leaf)) {
               throw "The Visual C++ runtime file '$sourcePath' was not found."
             }
