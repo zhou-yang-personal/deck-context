@@ -78,8 +78,12 @@ jobs:
           Copy-Item "artifacts/ocr" (Join-Path $packageDirectory "ocr") -Recurse
           Copy-Item "packaging/THIRD-PARTY-NOTICES.txt" $packageDirectory
 
-          $visualStudioRoot = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/2022"
-          $crtDirectory = Get-ChildItem $visualStudioRoot -Recurse -Directory -Filter "Microsoft.VC143.CRT" |
+          $visualStudioRoots = @(
+            (Join-Path $env:ProgramFiles "Microsoft Visual Studio/2022")
+            (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/2022")
+          ) | Where-Object { Test-Path $_ -PathType Container }
+          $crtDirectory = $visualStudioRoots |
+            ForEach-Object { Get-ChildItem $_ -Recurse -Directory -Filter "Microsoft.VC143.CRT" } |
             Where-Object { $_.FullName -match "[\\/]x64[\\/]" } |
             Sort-Object FullName -Descending |
             Select-Object -First 1
