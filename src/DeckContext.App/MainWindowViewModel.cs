@@ -19,7 +19,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IDeckContextConversionService conversionService;
     private IReadOnlyList<string> inputPaths = Array.Empty<string>();
     private string outputDirectory = string.Empty;
-    private string statusMessage = "Select or drop one or more PowerPoint files to begin.";
+    private string statusMessage = "Select or drop PowerPoint files or a folder to begin.";
     private int progressPercentage;
     private bool isBusy;
     private bool hasCompleted;
@@ -44,7 +44,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     };
 
     public string SelectedFilesTooltip => inputPaths.Count == 0
-        ? "Drop one or more .pptx files anywhere in this window."
+        ? "Drop one or more .pptx files or folders anywhere in this window."
         : string.Join(Environment.NewLine, inputPaths);
 
     public bool IsBatch => inputPaths.Count > 1;
@@ -126,6 +126,45 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<DiagnosticDisplayItem> Diagnostics { get; } = [];
 
     public void SetInputPath(string path) => SetInputPaths([path]);
+
+    public void SetInputDirectory(string directoryPath)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+        {
+            SetInputPaths([]);
+            StatusMessage = "Choose an existing folder.";
+            return;
+        }
+
+        try
+        {
+            var paths = Directory
+                .EnumerateFiles(Path.GetFullPath(directoryPath), "*", SearchOption.TopDirectoryOnly)
+                .Where(path => string.Equals(
+                    Path.GetExtension(path),
+                    ".pptx",
+                    StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            SetInputPaths(paths);
+            if (paths.Length == 0)
+            {
+                StatusMessage = "No .pptx files were found in the selected folder.";
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            SetInputPaths([]);
+            StatusMessage = $"Could not read the selected folder: {exception.Message}";
+        }
+    }
 
     public void SetInputPaths(IEnumerable<string> paths)
     {

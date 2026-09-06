@@ -74,9 +74,9 @@ Download and unzip the latest `DeckContext-dev-win-x64-{short-sha}` artifact, th
 
 Extract the complete artifact before launching; the executable depends on the DLLs beside it. If managed application startup fails, DeckContext shows the error and writes details to `%LOCALAPPDATA%\DeckContext\Logs\application-errors.log`.
 
-The desktop workflow accepts one or more PowerPoint files. Batch inputs are processed sequentially and each deck is published into its own `{file-name}.deck-context` folder under the selected output root. One failed deck is reported without stopping the remaining queue. The verification command continues to process one input file per invocation.
+The desktop workflow accepts one or more PowerPoint files, or all `.pptx` files in a selected/dropped folder. Folder input scans only the folder's top level, not subfolders, and orders files deterministically by file name. Batch inputs are processed sequentially and each deck is published into its own `{file-name}.deck-context` folder under the selected output root. One failed deck is reported without stopping the remaining queue. The verification command continues to process one input file per invocation.
 
-Select or drop one or more `.pptx` files, optionally choose an output folder, then select **Extract context**. A single selection keeps the original direct-package output behavior; a multiple selection uses the chosen folder as the batch output root. Each generated package contains:
+Use **Browse…** for one or more individual files, **Folder…** for one folder, or drop files/folders into the window. Optionally choose an output folder, then select **Extract context**. A single discovered presentation keeps the original direct-package output behavior; multiple presentations use the chosen folder as the batch output root. Each generated package contains:
 
 - `deck.context.md` — readable deck/slide/object context for humans and LLMs;
 - `deck.context.json` — the complete normalized intermediate representation;

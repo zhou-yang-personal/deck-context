@@ -33,6 +33,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SelectPowerPointFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Select a folder containing PowerPoint presentations",
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(viewModel.InputPath))
+        {
+            dialog.InitialDirectory = Path.GetDirectoryName(viewModel.InputPath) ?? string.Empty;
+        }
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            viewModel.SetInputDirectory(dialog.FolderName);
+        }
+    }
+
     private void SelectOutput_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog
@@ -96,10 +115,40 @@ public partial class MainWindow : Window
         }
 
         paths = files
-            .Where(file => File.Exists(file) &&
-                           string.Equals(Path.GetExtension(file), ".pptx", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(GetDroppedPowerPointPaths)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return paths.Length > 0;
+    }
+
+    private static IEnumerable<string> GetDroppedPowerPointPaths(string path)
+    {
+        if (File.Exists(path) &&
+            string.Equals(Path.GetExtension(path), ".pptx", StringComparison.OrdinalIgnoreCase))
+        {
+            return [path];
+        }
+
+        if (!Directory.Exists(path))
+        {
+            return [];
+        }
+
+        try
+        {
+            return Directory
+                .EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
+                .Where(file => string.Equals(
+                    Path.GetExtension(file),
+                    ".pptx",
+                    StringComparison.OrdinalIgnoreCase))
+                .OrderBy(file => Path.GetFileName(file), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(file => file, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 }

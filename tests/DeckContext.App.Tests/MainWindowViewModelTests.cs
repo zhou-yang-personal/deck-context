@@ -47,6 +47,44 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void SetInputDirectory_selects_only_top_level_powerpoints_in_stable_order()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var sourceFolder = Directory.CreateDirectory(Path.Combine(workspace.Path, "decks")).FullName;
+        var second = workspace.CreatePowerPointPlaceholder(Path.Combine("decks", "zeta.PPTX"));
+        var first = workspace.CreatePowerPointPlaceholder(Path.Combine("decks", "Alpha.pptx"));
+        workspace.CreatePowerPointPlaceholder(Path.Combine("decks", "notes.txt"));
+        workspace.CreatePowerPointPlaceholder(Path.Combine("decks", "nested", "ignored.pptx"));
+        var viewModel = new MainWindowViewModel(new FakeConversionService());
+
+        viewModel.SetInputDirectory(sourceFolder);
+
+        Assert.Equal(new[] { first, second }, viewModel.InputPaths);
+        Assert.True(viewModel.IsBatch);
+        Assert.True(viewModel.CanConvert);
+        Assert.Equal(
+            Path.Combine(sourceFolder, "DeckContext-batch-output"),
+            viewModel.OutputDirectory);
+        Assert.Contains("2 presentations", viewModel.StatusMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SetInputDirectory_reports_when_no_top_level_powerpoints_exist()
+    {
+        using var workspace = new TemporaryWorkspace();
+        workspace.CreatePowerPointPlaceholder("notes.txt");
+        workspace.CreatePowerPointPlaceholder(Path.Combine("nested", "ignored.pptx"));
+        var viewModel = new MainWindowViewModel(new FakeConversionService());
+
+        viewModel.SetInputDirectory(workspace.Path);
+
+        Assert.Empty(viewModel.InputPaths);
+        Assert.False(viewModel.CanConvert);
+        Assert.Empty(viewModel.OutputDirectory);
+        Assert.Equal("No .pptx files were found in the selected folder.", viewModel.StatusMessage);
+    }
+
+    [Fact]
     public async Task ConvertAsync_processes_a_batch_in_order_and_uses_unique_per_deck_directories()
     {
         using var workspace = new TemporaryWorkspace();
