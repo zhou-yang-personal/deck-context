@@ -73,8 +73,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void Convert_Click(object sender, RoutedEventArgs e) =>
-        await viewModel.ConvertAsync();
+    private async void Convert_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await viewModel.ConvertAsync();
+        }
+        catch (Exception exception)
+        {
+            viewModel.ReportUnexpectedConversionFailure(exception);
+        }
+    }
 
     private void OpenOutput_Click(object sender, RoutedEventArgs e)
     {

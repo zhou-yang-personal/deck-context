@@ -37,7 +37,7 @@ The primary use case is supplying historical PPT material to ChatGPT or another 
 7. DeckContext reports unsupported, partial, or failed extraction items explicitly; a failed deck does not stop later files in the batch.
 8. User exports/opens the generated context package or batch output root and supplies the relevant material to an LLM.
 
-Folder input scans only the selected folder's top level, filters for `.pptx` case-insensitively, and orders matches deterministically by file name. It does not recursively scan subfolders. For a single discovered deck, the output remains one directly selected context-package directory. For multiple inputs, each source deck is published into an independent `{file-name}.deck-context` directory beneath a selected batch output root. Duplicate source file names receive deterministic numeric suffixes. Batch processing does not introduce accounts, projects, persistent queues, or concurrent OCR execution.
+Folder input scans only the selected folder's top level, filters for `.pptx` case-insensitively, and orders matches deterministically by file name. It does not recursively scan subfolders. For a single discovered deck, the output remains one directly selected context-package directory. For multiple inputs, each source deck is published into an independent `{file-name}.deck-context` directory beneath a selected batch output root. Duplicate source file names receive deterministic numeric suffixes. The optional local OCR provider is created and released per deck so native state is isolated across the batch. Batch processing does not introduce accounts, projects, persistent queues, or concurrent OCR execution.
 
 ## 4. Required information domains
 

@@ -1,3 +1,4 @@
+using DeckContext.Application.Contracts;
 using DeckContext.Domain.Diagnostics;
 using DeckContext.Domain.Extraction;
 using DeckContext.Domain.Model;
@@ -134,6 +135,90 @@ public sealed class MainWindowViewModelTests
         var diagnostic = Assert.Single(viewModel.Diagnostics);
         Assert.Equal("APP-BATCH-CONVERT", diagnostic.Code);
         Assert.Equal("broken.pptx", diagnostic.Location);
+    }
+
+    [Fact]
+    public async Task ConvertAsync_uses_and_releases_a_separate_OCR_provider_for_each_deck()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var first = workspace.CreatePowerPointPlaceholder("first.pptx");
+        var second = workspace.CreatePowerPointPlaceholder("second.pptx");
+        var created = 0;
+        var disposed = 0;
+        var viewModel = new MainWindowViewModel(
+            new FakeConversionService(),
+            () =>
+            {
+                created++;
+                return new TrackingImageTextProvider(() => disposed++);
+            });
+        viewModel.SetInputPaths([first, second]);
+
+        await viewModel.ConvertAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, created);
+        Assert.Equal(2, disposed);
+        Assert.Equal("Batch extraction completed: 2 succeeded, 0 partial, 0 failed.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task ConvertAsync_continues_after_one_decks_OCR_provider_cannot_start()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var first = workspace.CreatePowerPointPlaceholder("first.pptx");
+        var second = workspace.CreatePowerPointPlaceholder("second.pptx");
+        var factoryCalls = 0;
+        var service = new FakeConversionService();
+        var viewModel = new MainWindowViewModel(
+            service,
+            () => ++factoryCalls == 1
+                ? throw new InvalidOperationException("OCR startup failed")
+                : new TrackingImageTextProvider(() => { }));
+        viewModel.SetInputPaths([first, second]);
+
+        await viewModel.ConvertAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, factoryCalls);
+        var call = Assert.Single(service.Calls);
+        Assert.Equal(second, call.SourcePath);
+        Assert.Equal("Batch extraction completed: 1 succeeded, 0 partial, 1 failed.", viewModel.StatusMessage);
+        var diagnostic = Assert.Single(viewModel.Diagnostics);
+        Assert.Equal("APP-BATCH-CONVERT", diagnostic.Code);
+        Assert.Contains("OCR startup failed", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConvertAsync_keeps_the_application_usable_when_OCR_cleanup_fails()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var sourcePath = workspace.CreatePowerPointPlaceholder("sample.pptx");
+        var viewModel = new MainWindowViewModel(
+            new FakeConversionService(),
+            () => new TrackingImageTextProvider(() => throw new InvalidOperationException("cleanup failed")));
+        viewModel.SetInputPath(sourcePath);
+
+        await viewModel.ConvertAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.HasCompleted);
+        Assert.True(viewModel.CanConvert);
+        var diagnostic = Assert.Single(viewModel.Diagnostics);
+        Assert.Equal("APP-OCR-CLEANUP", diagnostic.Code);
+        Assert.Contains("cleanup failed", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReportUnexpectedConversionFailure_restores_the_interactive_state()
+    {
+        var viewModel = new MainWindowViewModel(new FakeConversionService());
+
+        viewModel.ReportUnexpectedConversionFailure(new InvalidOperationException("unexpected failure"));
+
+        Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.CanChangePaths);
+        var diagnostic = Assert.Single(viewModel.Diagnostics);
+        Assert.Equal("APP-CONVERT-UNHANDLED", diagnostic.Code);
+        Assert.Contains("unexpected failure", viewModel.StatusMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -321,6 +406,22 @@ public sealed class MainWindowViewModelTests
                 Path.Combine(outputDirectory, "manifest.json"),
                 []);
         }
+    }
+
+    private sealed class TrackingImageTextProvider(Action onDispose) : IImageTextProvider, IDisposable
+    {
+        public string ProviderId => "test-tracking-provider";
+
+        public Task<ImageContentInterpretationContext> AnalyzeAsync(
+            ImageTextRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ImageContentInterpretationContext(
+                ImageContentInterpretationStatus.Succeeded,
+                ProviderId,
+                null,
+                "Test provider."));
+
+        public void Dispose() => onDispose();
     }
 
     private sealed class TemporaryWorkspace : IDisposable

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using DeckContext.Application.Contracts;
 using DeckContext.Domain.Extraction;
 using DeckContext.Domain.Model;
 using DeckContext.Pipeline;
@@ -17,6 +18,7 @@ public sealed record DiagnosticDisplayItem(
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IDeckContextConversionService conversionService;
+    private readonly Func<IImageTextProvider> imageTextProviderFactory;
     private IReadOnlyList<string> inputPaths = Array.Empty<string>();
     private string outputDirectory = string.Empty;
     private string statusMessage = "Select or drop PowerPoint files or a folder to begin.";
@@ -25,9 +27,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool hasCompleted;
     private bool localOcrEnabled = true;
 
-    public MainWindowViewModel(IDeckContextConversionService conversionService)
+    public MainWindowViewModel(
+        IDeckContextConversionService conversionService,
+        Func<IImageTextProvider>? imageTextProviderFactory = null)
     {
         this.conversionService = conversionService;
+        this.imageTextProviderFactory = imageTextProviderFactory ?? (() => new TesseractImageTextProvider());
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -233,28 +238,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        var jobInputPaths = inputPaths.ToArray();
-        var jobOutputDirectory = OutputDirectory;
-        var jobOutputDirectories = ResolveJobOutputDirectories(jobInputPaths, jobOutputDirectory);
         IsBusy = true;
         HasCompleted = false;
         ProgressPercentage = 0;
         Diagnostics.Clear();
         var acceptsProgress = 1;
         var activeProgressJob = -1;
-        TesseractImageTextProvider? imageTextProvider = null;
+        var producedOutputs = 0;
 
         try
         {
-            if (LocalOcrEnabled)
-            {
-                imageTextProvider = new TesseractImageTextProvider();
-            }
-
+            var jobInputPaths = inputPaths.ToArray();
+            var jobOutputDirectory = OutputDirectory;
+            var jobOutputDirectories = ResolveJobOutputDirectories(jobInputPaths, jobOutputDirectory);
             var succeeded = 0;
             var partial = 0;
             var failed = 0;
-            var producedOutputs = 0;
             string? lastFailureMessage = null;
 
             for (var index = 0; index < jobInputPaths.Length; index++)
@@ -282,8 +281,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         $"{jobIndex + 1}/{jobInputPaths.Length} {Path.GetFileName(sourcePath)} — {update.Message}";
                 });
 
+                IImageTextProvider? imageTextProvider = null;
                 try
                 {
+                    if (LocalOcrEnabled)
+                    {
+                        imageTextProvider = imageTextProviderFactory();
+                    }
+
                     var result = await conversionService.ConvertAsync(
                         sourcePath,
                         jobOutputDirectories[jobIndex],
@@ -324,6 +329,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 finally
                 {
                     Volatile.Write(ref activeProgressJob, -1);
+                    DisposeImageTextProvider(imageTextProvider, sourcePath);
                 }
 
                 ProgressPercentage = (jobIndex + 1) * 100 / jobInputPaths.Length;
@@ -340,12 +346,54 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             StatusMessage = "Extraction was cancelled.";
         }
+        catch (Exception exception)
+        {
+            HasCompleted = producedOutputs > 0;
+            Diagnostics.Add(new DiagnosticDisplayItem(
+                "Error",
+                "APP-BATCH-UNEXPECTED",
+                exception.Message,
+                "Batch"));
+            StatusMessage = $"Batch extraction stopped safely: {exception.Message}";
+        }
         finally
         {
-            imageTextProvider?.Dispose();
             Volatile.Write(ref activeProgressJob, -1);
             Interlocked.Exchange(ref acceptsProgress, 0);
             IsBusy = false;
+        }
+    }
+
+    public void ReportUnexpectedConversionFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        IsBusy = false;
+        Diagnostics.Add(new DiagnosticDisplayItem(
+            "Error",
+            "APP-CONVERT-UNHANDLED",
+            exception.Message,
+            "Application"));
+        StatusMessage = $"Extraction stopped safely: {exception.Message}";
+    }
+
+    private void DisposeImageTextProvider(IImageTextProvider? imageTextProvider, string sourcePath)
+    {
+        if (imageTextProvider is not IDisposable disposable)
+        {
+            return;
+        }
+
+        try
+        {
+            disposable.Dispose();
+        }
+        catch (Exception exception)
+        {
+            Diagnostics.Add(new DiagnosticDisplayItem(
+                "Warning",
+                "APP-OCR-CLEANUP",
+                $"The OCR provider could not be fully released: {exception.Message}",
+                Path.GetFileName(sourcePath)));
         }
     }
 
