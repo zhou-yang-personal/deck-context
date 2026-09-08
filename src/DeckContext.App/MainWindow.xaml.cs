@@ -13,7 +13,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        viewModel = new MainWindowViewModel(new DeckContextConversionService());
+        viewModel = new MainWindowViewModel(
+            new ProcessIsolatedDeckContextConversionService(),
+            () => null);
         DataContext = viewModel;
     }
 

@@ -29,4 +29,7 @@ public sealed class ContextPackageManifestSerializer
         ArgumentNullException.ThrowIfNull(manifest);
         return DeterministicJson.Serialize(manifest);
     }
+
+    public ContextPackageManifest Deserialize(string json) =>
+        DeterministicJson.Deserialize<ContextPackageManifest>(json);
 }

@@ -291,6 +291,11 @@ public sealed class DeckContextPackageExportTests
             .GetProperty("assets")[1]
             .GetProperty("relativePath")
             .GetString());
+
+        var roundTripped = serializer.Deserialize(first);
+        Assert.Equal(manifest.SchemaVersion, roundTripped.SchemaVersion);
+        Assert.Equal(manifest.SourceFileName, roundTripped.SourceFileName);
+        Assert.Equal(manifest.Assets.ToArray(), roundTripped.Assets.ToArray());
     }
 
     private static TextContentContext Text(string value) =>

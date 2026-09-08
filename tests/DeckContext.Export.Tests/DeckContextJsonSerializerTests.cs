@@ -36,6 +36,13 @@ public sealed class DeckContextJsonSerializerTests
         Assert.Equal("sample.pptx", root.GetProperty("deck").GetProperty("sourceFileName").GetString());
         Assert.Equal("succeeded", root.GetProperty("status").GetString());
         Assert.Equal(1, root.GetProperty("slides").GetArrayLength());
+
+        var roundTripped = serializer.Deserialize(first);
+        Assert.Equal(document.SchemaVersion, roundTripped.SchemaVersion);
+        Assert.Equal(document.Deck, roundTripped.Deck);
+        Assert.Equal(document.Status, roundTripped.Status);
+        Assert.Single(roundTripped.Slides);
+        Assert.Equal(document.Slides[0].Metadata, roundTripped.Slides[0].Metadata);
     }
 
     [Fact]

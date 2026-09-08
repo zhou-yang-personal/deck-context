@@ -24,7 +24,8 @@ public sealed record ContextPackageResult(
     IReadOnlyList<ContextPackageAsset> Assets);
 
 public sealed record DeckContextConversionOptions(
-    IImageTextProvider? ImageTextProvider = null);
+    IImageTextProvider? ImageTextProvider = null,
+    bool UseBundledLocalOcr = false);
 
 public interface IDeckContextConversionService
 {

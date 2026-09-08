@@ -10,8 +10,6 @@ if (args.Length is not 2 and not 3)
 
 var sourcePath = Path.GetFullPath(args[0]);
 var outputDirectory = Path.GetFullPath(args[1]);
-TesseractImageTextProvider? imageTextProvider = null;
-
 try
 {
     if (args.Length == 3 && !string.Equals(args[2], "--no-ocr", StringComparison.Ordinal))
@@ -20,7 +18,8 @@ try
         return 2;
     }
 
-    imageTextProvider = args.Length == 3 ? null : new TesseractImageTextProvider();
+    var imageTextProvider = args.Length == 3 ? null : new TesseractImageTextProvider();
+    WorkerLifetime.NativeOcrProvider = imageTextProvider;
 
     var progress = new Progress<ConversionProgress>(item =>
         Console.WriteLine($"[{item.Percentage,3}%] {item.Stage}: {item.Message}"));
@@ -37,6 +36,9 @@ try
     Console.WriteLine($"JSON: {result.ContextJsonPath}");
     Console.WriteLine($"Report: {result.ExtractionReportPath}");
     Console.WriteLine($"Manifest: {result.ManifestPath}");
+    // This executable is a short-lived isolation worker. Keep the provider rooted
+    // and let the OS reclaim native OCR state at process exit; native teardown must
+    // never run inside the long-lived WPF process.
     return result.Document.Status == DeckContext.Domain.Extraction.ExtractionStatus.Failed ? 1 : 0;
 }
 catch (Exception exception)
@@ -44,7 +46,8 @@ catch (Exception exception)
     Console.Error.WriteLine($"DeckContext verification failed: {exception.Message}");
     return 1;
 }
-finally
+
+internal static class WorkerLifetime
 {
-    imageTextProvider?.Dispose();
+    internal static TesseractImageTextProvider? NativeOcrProvider { get; set; }
 }

@@ -18,7 +18,7 @@ public sealed record DiagnosticDisplayItem(
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private readonly IDeckContextConversionService conversionService;
-    private readonly Func<IImageTextProvider> imageTextProviderFactory;
+    private readonly Func<IImageTextProvider?> imageTextProviderFactory;
     private IReadOnlyList<string> inputPaths = Array.Empty<string>();
     private string outputDirectory = string.Empty;
     private string statusMessage = "Select or drop PowerPoint files or a folder to begin.";
@@ -29,7 +29,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public MainWindowViewModel(
         IDeckContextConversionService conversionService,
-        Func<IImageTextProvider>? imageTextProviderFactory = null)
+        Func<IImageTextProvider?>? imageTextProviderFactory = null)
     {
         this.conversionService = conversionService;
         this.imageTextProviderFactory = imageTextProviderFactory ?? (() => new TesseractImageTextProvider());
@@ -294,7 +294,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         jobOutputDirectories[jobIndex],
                         progress,
                         cancellationToken,
-                        new DeckContextConversionOptions(imageTextProvider));
+                        new DeckContextConversionOptions(
+                            imageTextProvider,
+                            UseBundledLocalOcr: LocalOcrEnabled));
                     producedOutputs++;
 
                     switch (result.Document.Status)

@@ -9,4 +9,7 @@ public sealed class DeckContextJsonSerializer
         ArgumentNullException.ThrowIfNull(document);
         return DeterministicJson.Serialize(document);
     }
+
+    public DeckContextDocument Deserialize(string json) =>
+        DeterministicJson.Deserialize<DeckContextDocument>(json);
 }

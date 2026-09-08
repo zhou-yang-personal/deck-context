@@ -12,6 +12,13 @@ internal static class DeterministicJson
         return $"{JsonSerializer.Serialize(value, Options).Replace("\r\n", "\n", StringComparison.Ordinal)}\n";
     }
 
+    public static T Deserialize<T>(string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        return JsonSerializer.Deserialize<T>(json, Options) ??
+               throw new JsonException($"The JSON payload did not contain a {typeof(T).Name} value.");
+    }
+
     private static JsonSerializerOptions CreateOptions()
     {
         var options = new JsonSerializerOptions
