@@ -37,7 +37,7 @@ The primary use case is supplying historical PPT material to ChatGPT or another 
 7. DeckContext reports unsupported, partial, or failed extraction items explicitly; a failed deck does not stop later files in the batch.
 8. User exports/opens the generated context package or batch output root and supplies the relevant material to an LLM.
 
-Folder input scans only the selected folder's top level, filters for `.pptx` case-insensitively, and orders matches deterministically by file name. It does not recursively scan subfolders. For a single discovered deck, the output remains one directly selected context-package directory. For multiple inputs, each source deck is published into an independent `{file-name}.deck-context` directory beneath a selected batch output root. Duplicate source file names receive deterministic numeric suffixes. The desktop invokes the same single-deck pipeline in a short-lived worker process per deck, containing native OCR failures and memory to that worker while retaining sequential processing. Batch processing does not introduce accounts, projects, persistent queues, or concurrent OCR execution.
+Folder input scans only the selected folder's top level, filters for `.pptx` case-insensitively, and orders matches deterministically by file name. It does not recursively scan subfolders. For a single-file CLI input or a single deck discovered by the desktop, the output remains one directly selected context-package directory. For folder or multi-file batches, each source deck is published into an independent `{file-name}.deck-context` directory beneath a selected batch output root. Duplicate source file names receive deterministic numeric suffixes. Folder-mode CLI output also includes a deterministic, machine-readable `batch-result.json`. The desktop and CLI invoke the same single-deck pipeline in a short-lived worker process per deck, containing native OCR failures and memory to that worker while retaining sequential processing. Batch processing does not introduce accounts, projects, persistent queues, or concurrent OCR execution.
 
 ## 4. Required information domains
 
@@ -222,7 +222,7 @@ The resulting Markdown/JSON should remain useful outside DeckContext and should 
 
 V1 includes image text recognition through the existing provider boundary and ships a bundled, fully local Tesseract 5 CPU adapter:
 
-- the packaged desktop application and verification command enable local OCR by default and allow it to be disabled per conversion;
+- the packaged desktop application and CLI enable local OCR by default and allow it to be disabled per conversion;
 - Simplified Chinese, English, and Spanish `tessdata_fast` models are included in the Windows package;
 - OCR does not require an account, API key, network connection, PowerPoint installation, or separately installed OCR runtime;
 - image bytes and recognized text remain on the local computer;

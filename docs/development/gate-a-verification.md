@@ -9,7 +9,7 @@ Phase 5 requires a real Windows review because production PPTX files contain cha
 3. Run:
 
 ```powershell
-.\DeckContext\DeckContext.Verification.exe `
+.\DeckContext\DeckContext.Cli.exe `
   "C:\path\Ecuador_FBB_Plan_Competitive_Analysis_v4_Add_NormalPrice_CN.pptx" `
   "C:\path\deck-context-output"
 ```

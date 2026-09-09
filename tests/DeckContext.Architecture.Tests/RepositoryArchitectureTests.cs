@@ -22,6 +22,7 @@ public sealed class RepositoryArchitectureTests
             "DeckContext.OpenXml.Tests",
             "DeckContext.Export.Tests",
             "DeckContext.Verification",
+            "DeckContext.Cli",
             "DeckContext.Pipeline",
             "DeckContext.App.Tests",
         };
@@ -52,6 +53,9 @@ public sealed class RepositoryArchitectureTests
             "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj");
         AssertProjectReferences(
             "tools/DeckContext.Verification/DeckContext.Verification.csproj",
+            "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj");
+        AssertProjectReferences(
+            "tools/DeckContext.Cli/DeckContext.Cli.csproj",
             "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj");
         AssertProjectReferences(
             "src/DeckContext.Pipeline/DeckContext.Pipeline.csproj",

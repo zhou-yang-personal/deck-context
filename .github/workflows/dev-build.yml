@@ -51,11 +51,20 @@ jobs:
           DECKCONTEXT_TEST_OCR_DATA: ${{ github.workspace }}\artifacts\ocr\tessdata
           DECKCONTEXT_TEST_OCR_IMAGE: ${{ github.workspace }}\artifacts\ocr-test\phototest.tif
 
-      # Publish the console tool first, then the WPF app into the same directory.
+      # Publish the console tools first, then the WPF app into the same directory.
       # The WindowsDesktop publish supplies the superset when framework files overlap.
       - name: Publish verification command into shared package
         run: >-
           dotnet publish tools/DeckContext.Verification/DeckContext.Verification.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output artifacts/publish/DeckContext
+
+      - name: Publish Codex CLI into shared package
+        run: >-
+          dotnet publish tools/DeckContext.Cli/DeckContext.Cli.csproj
           --configuration Release
           --runtime win-x64
           --self-contained true
@@ -97,8 +106,10 @@ jobs:
           $packageDirectory = "artifacts/publish/DeckContext"
           $requiredFiles = @(
             "DeckContext.exe",
+            "DeckContext.Cli.exe",
             "DeckContext.Verification.exe",
             "DeckContext.runtimeconfig.json",
+            "DeckContext.Cli.runtimeconfig.json",
             "DeckContext.Verification.runtimeconfig.json",
             "x64/tesseract55.dll",
             "x64/leptonica-1.85.0.dll",
@@ -129,6 +140,13 @@ jobs:
           $global:LASTEXITCODE = 0
           if ($verificationExitCode -ne 2) {
             throw "Verification command startup check returned exit code $verificationExitCode instead of 2."
+          }
+
+          & (Join-Path $packageDirectory "DeckContext.Cli.exe") --help
+          $cliExitCode = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          if ($cliExitCode -ne 0) {
+            throw "Codex CLI startup check returned exit code $cliExitCode instead of 0."
           }
 
           $packageBytes = (Get-ChildItem $packageDirectory -Recurse -File |

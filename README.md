@@ -62,7 +62,7 @@ dotnet build DeckContext.sln --configuration Release --no-restore
 dotnet test DeckContext.sln --configuration Release --no-build
 ```
 
-Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF application and verification command as one self-contained `win-x64` package with a shared .NET runtime, and upload a commit-traceable GitHub Actions artifact.
+Pushes to `dev` and manual workflow dispatches run the same checks on Windows, publish the WPF application, Codex-friendly CLI, and isolated verification worker as one self-contained `win-x64` package with a shared .NET runtime, and upload a commit-traceable GitHub Actions artifact.
 
 ## Use the Windows application
 
@@ -74,7 +74,7 @@ Download and unzip the latest `DeckContext-dev-win-x64-{short-sha}` artifact, th
 
 Extract the complete artifact before launching; the executable depends on the DLLs beside it. If managed application startup fails, DeckContext shows the error and writes details to `%LOCALAPPDATA%\DeckContext\Logs\application-errors.log`.
 
-The desktop workflow accepts one or more PowerPoint files, or all `.pptx` files in a selected/dropped folder. Folder input scans only the folder's top level, not subfolders, and orders files deterministically by file name. Batch inputs are processed sequentially and each deck is published into its own `{file-name}.deck-context` folder under the selected output root. The desktop launches each deck in a short-lived conversion worker, so a native OCR crash is contained to that deck and the main window can report the failure and continue the queue. Unexpected managed batch errors are likewise surfaced in the window instead of terminating the application. The verification command continues to process one input file per invocation and also serves as the packaged isolation worker.
+The desktop workflow accepts one or more PowerPoint files, or all `.pptx` files in a selected/dropped folder. Folder input scans only the folder's top level, not subfolders, and orders files deterministically by file name. Batch inputs are processed sequentially and each deck is published into its own `{file-name}.deck-context` folder under the selected output root. The desktop and CLI launch each deck in a short-lived conversion worker, so a native OCR crash is contained to that deck and the caller can report the failure and continue the queue. Unexpected managed batch errors are likewise surfaced instead of terminating the batch. `DeckContext.Verification.exe` remains the packaged internal single-deck worker.
 
 Use **Browse…** for one or more individual files, **Folder…** for one folder, or drop files/folders into the window. Optionally choose an output folder, then select **Extract context**. A single discovered presentation keeps the original direct-package output behavior; multiple presentations use the chosen folder as the batch output root. Each generated package contains:
 
@@ -89,17 +89,25 @@ Image OCR is enabled by default and remains fully local. The package includes Te
 
 DeckContext publishes the package through a sibling staging directory and replaces an existing output only when it is empty or is an intact DeckContext-owned package. Choose a new or empty directory when exporting into a location that contains unrelated files.
 
-The same pipeline is available as a command for repeatable verification or automation:
+For Codex and other automation, use the stable non-interactive CLI. A single file writes directly into the specified output directory:
 
 ```powershell
-.\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output"
+.\DeckContext\DeckContext.Cli.exe "C:\path\input.pptx" "C:\path\deck-context-output"
 ```
 
-Automation also enables bundled offline OCR by default. Use `--no-ocr` for a faster structure-only extraction:
+A folder input processes its top-level `.pptx` files in deterministic file-name order, continues after a failed deck, creates one `{file-name}.deck-context` child folder per presentation, and writes an aggregate `batch-result.json` for machine consumption:
 
 ```powershell
-.\DeckContext\DeckContext.Verification.exe "C:\path\input.pptx" "C:\path\deck-context-output" --no-ocr
+.\DeckContext\DeckContext.Cli.exe "C:\path\ppt-folder" "C:\path\batch-output"
 ```
+
+The CLI enables bundled offline OCR by default. Add `--no-ocr` for faster structure-only extraction:
+
+```powershell
+.\DeckContext\DeckContext.Cli.exe "C:\path\ppt-folder" "C:\path\batch-output" --no-ocr
+```
+
+Exit code `0` means all decks completed as `Succeeded` or `Partial`, `1` means at least one deck failed, and `2` means the input or arguments were invalid. `DeckContext.Verification.exe` is an implementation worker and is not the public automation entry point.
 
 For each deck, both entry points open the PPTX once to build the same IR and capture immutable asset snapshots, then project concise Markdown, complete JSON, diagnostics, manifest, and assets from that result. Duplicate image placements with the same image hash and crop are analyzed once. Without a provider, images are still preserved and the output records one explicit deck-level notice that pixel content was not analyzed.
 

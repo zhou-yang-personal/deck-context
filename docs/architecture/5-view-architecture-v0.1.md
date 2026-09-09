@@ -344,6 +344,9 @@ deck-context/
 │  ├─ DeckContext.Export/
 │  ├─ DeckContext.Pipeline/
 │  └─ DeckContext.Adapters/        # when an optional adapter is actually implemented
+├─ tools/
+│  ├─ DeckContext.Cli/             # public non-interactive file/folder entry point
+│  └─ DeckContext.Verification/    # internal isolated single-deck worker
 └─ tests/
    ├─ DeckContext.App.Tests/
    ├─ DeckContext.OpenXml.Tests/
@@ -359,6 +362,12 @@ deck-context/
 
 ```text
 DeckContext.App
+    -> DeckContext.Pipeline
+
+DeckContext.Cli
+    -> DeckContext.Pipeline
+
+DeckContext.Verification
     -> DeckContext.Pipeline
 
 DeckContext.Application
